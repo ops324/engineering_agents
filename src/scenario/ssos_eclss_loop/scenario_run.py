@@ -393,6 +393,19 @@ class SsosEclssLoopScenario(Scenario):
         if isinstance(team, SsosEclssLoopTeam) and team.mode in {"labeled_rule_base", "llm"}:
             summary["team_count"] = team.team_cfg.count
             summary["agent_ids"] = list(team.team_cfg.agent_ids)
+            # Composition is recorded in every mode so a run artifact says which
+            # configuration produced it (parity with scrubber_degradation).
+            summary["archetypes"] = {
+                aid: lens for aid, lens in team.team_cfg.archetypes
+            }
+            if team.design_team_cfg is not None:
+                summary["design_team"] = {
+                    aid: subsystem for aid, subsystem in team.design_team_cfg.subsystems
+                }
+                summary["design_proposer_kind"] = "subsystem_design_team"
+            else:
+                summary["design_team"] = {}
+                summary["design_proposer_kind"] = "operator_rep"
             if team.mode == "llm":
                 summary["max_actions_per_step"] = team.max_actions_per_step
             proposals = team.propose_post_run_design(summary)
