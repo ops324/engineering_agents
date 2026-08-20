@@ -48,6 +48,49 @@ ARCHETYPE_LENSES: Dict[str, str] = {
 }
 
 
+DEFAULT_DESIGN_PERSONA = (
+    "Post-run ECLSS design engineer. The simulation is over; you are reviewing what happened.\n"
+    "Ground every claim in the run summary and the operators' discourse — not in what you "
+    "expected to happen.\n"
+    "Propose changes to the next run's design, not actions inside the finished run.\n"
+    "Say plainly when the run gives you no evidence for a change in your own subsystem."
+)
+
+# Subsystem responsibilities for post-run design proposers.
+#
+# Distinct from ARCHETYPE_LENSES: archetypes are *ways of thinking* used by
+# operators during a run; these name *which subsystem a proposer answers for*
+# after the run. Only subsystems the EclssBackend can actually act on are
+# listed — the scope deck also mentions temperature/humidity control, which has
+# no backend counterpart yet and is therefore intentionally absent.
+DESIGN_SUBSYSTEM_LENSES: Dict[str, str] = {
+    "air_revitalisation": (
+        "Subsystem responsibility — Air revitalisation (ARS): CO2 removal capacity, "
+        "moisture and contaminant handling. Judge whether the run's CO2 trajectory was "
+        "driven by capacity, by timing, or by an outage you cannot design around."
+    ),
+    "oxygen_generation": (
+        "Subsystem responsibility — Oxygen generation (OGS): O2 production and the water "
+        "it consumes. Watch the coupling: O2 margin bought with water may be paid for by "
+        "the water subsystem."
+    ),
+    "water_recovery": (
+        "Subsystem responsibility — Water recovery (WRS): reclaim throughput and reserve "
+        "margin. You are downstream of everyone; say so when another subsystem's proposal "
+        "would drain you."
+    ),
+    "fault_detection": (
+        "Subsystem responsibility — Fault detection: how early and how reliably the team "
+        "saw trouble. Judge detection latency and missed signals, not the recovery itself."
+    ),
+    "systems_integration": (
+        "Subsystem responsibility — Systems integration: you own no subsystem. Judge "
+        "whether the individual proposals are consistent with each other and with the "
+        "resource budget, and name the conflicts nobody else will."
+    ),
+}
+
+
 @dataclass(frozen=True)
 class TeamConfig:
     count: int
@@ -103,6 +146,67 @@ def load_team(config: Dict[str, Any]) -> TeamConfig:
         agent_ids=agent_ids,
         archetypes=archetypes,
     )
+
+
+@dataclass(frozen=True)
+class DesignTeamConfig:
+    """Post-run design proposers, separate from the in-run operator team."""
+
+    id_prefix: str
+    shared_persona: str
+    agent_ids: Tuple[str, ...]
+    # (agent_id, subsystem_name) pairs, one per agent.
+    subsystems: Tuple[Tuple[str, str], ...]
+
+    @property
+    def count(self) -> int:
+        return len(self.agent_ids)
+
+
+def load_design_team(config: Dict[str, Any]) -> Optional[DesignTeamConfig]:
+    """Read the optional ``design_team`` section.
+
+    Returns None when absent or empty, which keeps the pre-separation behaviour
+    (an operator issues the post-run proposal) intact.
+    """
+    raw = config.get("design_team") or {}
+    if not raw:
+        return None
+    subsystems_raw = raw.get("subsystems")
+    if not subsystems_raw:
+        return None
+    if not isinstance(subsystems_raw, (list, tuple)):
+        raise ValueError(
+            f"design_team.subsystems must be a list, got {type(subsystems_raw).__name__}"
+        )
+    names = [str(name).strip() for name in subsystems_raw if str(name).strip()]
+    if not names:
+        return None
+    unknown = [name for name in names if name not in DESIGN_SUBSYSTEM_LENSES]
+    if unknown:
+        raise ValueError(
+            f"Unknown design subsystem(s): {unknown}. "
+            f"Known subsystems: {sorted(DESIGN_SUBSYSTEM_LENSES)}"
+        )
+    id_prefix = str(raw.get("id_prefix", "design"))
+    persona_text = str(raw.get("persona") or DEFAULT_DESIGN_PERSONA).strip()
+    agent_ids = tuple(f"{id_prefix}_{name}" for name in names)
+    return DesignTeamConfig(
+        id_prefix=id_prefix,
+        shared_persona=persona_text,
+        agent_ids=agent_ids,
+        subsystems=tuple(zip(agent_ids, names)),
+    )
+
+
+def build_design_personas(design_team: DesignTeamConfig) -> Dict[str, Persona]:
+    return {
+        agent_id: Persona(
+            agent_id=agent_id,
+            persona=f"{DESIGN_SUBSYSTEM_LENSES[subsystem]}\n\n{design_team.shared_persona}",
+        )
+        for agent_id, subsystem in design_team.subsystems
+    }
 
 
 def build_personas(team: TeamConfig) -> Dict[str, Persona]:
@@ -378,6 +482,22 @@ class PersonaAgent:
                 "recommendations only — cite team discourse and run outcomes."
             )
         return PersonaAgent.action_round_hint()
+
+    @staticmethod
+    def design_round_hint(*, subsystem: str, n_proposers: int = 1) -> str:
+        """Post-run hint for a subsystem design proposer (not an operator)."""
+        base = (
+            f"Post-run design review — you answer for {subsystem}. The simulation is "
+            "complete; propose changes for the NEXT run, as recommendations only. "
+            "Cite the run summary and named operators."
+        )
+        if n_proposers <= 1:
+            return base
+        return (
+            f"{base} {n_proposers} subsystem proposers are writing simultaneously — you "
+            "do not see their proposals. Stay inside your own subsystem, and say so "
+            "explicitly when the evidence supports no change."
+        )
 
     @staticmethod
     def action_round_hint(*, n_reps: int = 1, slot: int = 0) -> str:

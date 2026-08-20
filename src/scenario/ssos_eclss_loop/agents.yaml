@@ -49,6 +49,20 @@ policy:
   wrs_goal:
     urine_volume: 2.0
 
+# Post-run design proposers, separate from the operators above (llm mode only).
+# Operators answer "what do we do now"; these answer "how should the next run be
+# built". Commented out by default: without it, an operator issues the proposal
+# exactly as before. Known subsystems: air_revitalisation, oxygen_generation,
+# water_recovery, fault_detection, systems_integration.
+# design_team:
+#   id_prefix: design
+#   subsystems:
+#     - air_revitalisation
+#     - oxygen_generation
+#     - water_recovery
+#     - fault_detection
+#     - systems_integration
+
 llm:
   # ollama (local daemon) or vllm (lab GPU server: https://github.com/hirototamura/vllm_server)
   provider: ollama

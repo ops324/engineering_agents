@@ -10,11 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from core.agents.base import Team
 from core.agents.memory import TeamMemoryStore
 from core.agents.persona import (
+    DesignTeamConfig,
     PersonaAgent,
     TeamConfig,
+    build_design_personas,
     build_personas,
     eclss_design_proposal_contract,
     eclss_operational_action_contract,
+    load_design_team,
     load_team,
     message_contract,
     run_parallel,
@@ -117,6 +120,26 @@ class SsosEclssLoopTeam(Team):
             team_count=self.team_cfg.count,
         )
 
+        # Post-run design proposers, separate from the operators above. Absent by
+        # default, in which case an operator issues the proposal as before.
+        self.design_team_cfg: Optional[DesignTeamConfig] = load_design_team(config)
+        self.design_agents: Dict[str, PersonaAgent] = {}
+        if self.design_team_cfg is not None:
+            design_personas = build_design_personas(self.design_team_cfg)
+            self.design_memory_store = TeamMemoryStore(
+                agent_ids=list(design_personas),
+                memory_limit=int(config.get("memory_limit", 8)),
+                discourse_window=int(config.get("discourse_window", 12)),
+            )
+            self.design_agents = {
+                agent_id: PersonaAgent(
+                    persona=persona,
+                    memory=self.design_memory_store.agent_memories[agent_id],
+                    llm_client=self.llm_client,
+                )
+                for agent_id, persona in design_personas.items()
+            }
+
     def _action_rep_id(self, step: int) -> str:
         """Round-robin representative for 0-based scenario steps (`step % N`)."""
         return self.team_cfg.agent_ids[step % self.team_cfg.count]
@@ -150,6 +173,8 @@ class SsosEclssLoopTeam(Team):
         steps = int(summary.get("steps", 0))
         rep = self._action_rep_id(steps - 1 if steps > 0 else 0)
         if self.llm_mode:
+            if self.design_agents:
+                return self._llm_subsystem_design_proposals(summary, baseline_graph)
             return self._llm_post_run_design_proposal(summary, baseline_graph, rep)
         return build_design_proposals_from_run(
             proposed_by=rep,
@@ -158,6 +183,116 @@ class SsosEclssLoopTeam(Team):
             summary=summary,
             baseline_graph=baseline_graph or None,
         )
+
+    def _llm_subsystem_design_proposals(
+        self,
+        summary: Dict[str, Any],
+        baseline_graph: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Each subsystem proposer writes simultaneously; their changes are merged.
+
+        Simultaneous by design, for the same reason the deliberation round is:
+        a proposer that sees its peers' drafts converges on them. Cross-proposal
+        reconciliation is the ``systems_integration`` proposer's job, and it is
+        done from the run evidence rather than from the other drafts.
+        """
+        assert self.design_team_cfg is not None
+        subsystem_by_agent = dict(self.design_team_cfg.subsystems)
+        agent_ids = list(self.design_team_cfg.agent_ids)
+        results = run_parallel(
+            [
+                self._llm_subsystem_design_turn(
+                    summary=summary,
+                    baseline_graph=baseline_graph,
+                    agent_id=agent_id,
+                    subsystem=subsystem_by_agent[agent_id],
+                    n_proposers=len(agent_ids),
+                )
+                for agent_id in agent_ids
+            ]
+        )
+
+        changes: List[Dict[str, Any]] = []
+        contributions: List[Dict[str, Any]] = []
+        parse_notes: List[str] = []
+        messages: List[str] = []
+        for agent_id, result in zip(agent_ids, results):
+            contributions.append(result)
+            parse_notes.extend(
+                f"{agent_id}: {note}" for note in result.get("parse_notes", [])
+            )
+            if result.get("message"):
+                messages.append(f"{agent_id}: {result['message']}")
+            for change in result.get("changes", []):
+                # proposed_by rides along per change so provenance survives the
+                # merge; validate_design_proposals ignores extra keys.
+                changes.append({**change, "proposed_by": agent_id})
+
+        sources = {c.get("decision_source") for c in contributions}
+        decision_source = "llm" if "llm" in sources else "llm_parse_fail"
+        return {
+            "design_domain": DESIGN_DOMAIN,
+            "proposed_by": ",".join(agent_ids),
+            "proposer_kind": "subsystem_design_team",
+            "decision_source": decision_source,
+            "message": " | ".join(messages),
+            "reasoning": "Merged from simultaneous per-subsystem design proposals.",
+            "changes": changes,
+            "baseline_graph": baseline_graph,
+            "parse_notes": parse_notes,
+            "contributions": contributions,
+        }
+
+    async def _llm_subsystem_design_turn(
+        self,
+        *,
+        summary: Dict[str, Any],
+        baseline_graph: Dict[str, Any],
+        agent_id: str,
+        subsystem: str,
+        n_proposers: int,
+    ) -> Dict[str, Any]:
+        discourse = self.memory_store.discourse.recent()
+        situation = build_llm_post_run_situation(summary, discourse, baseline_graph)
+        agent = self.design_agents[agent_id]
+        ctx = agent.build_context(
+            step=int(summary.get("steps", 0)),
+            phase=DeliberationPhase.POST_RUN,
+            situation=situation,
+            step_discourse=[],
+            # Operators' discourse is evidence for the proposer, which is why the
+            # design agent reads the operator store rather than its own.
+            team_discourse=discourse,
+        )
+        parsed = await agent.deliberate_async(
+            ctx,
+            eclss_design_proposal_contract(),
+            PersonaAgent.design_round_hint(subsystem=subsystem, n_proposers=n_proposers),
+            ("message", "reasoning", "changes"),
+        )
+        if parsed is None:
+            return {
+                "agent_id": agent_id,
+                "subsystem": subsystem,
+                "decision_source": "llm_parse_fail",
+                "message": "",
+                "reasoning": "LLM response could not be parsed.",
+                "changes": [],
+                "parse_notes": ["response could not be parsed"],
+            }
+        changes, notes = self._parse_llm_design_proposals(parsed.data.get("changes", []))
+        return {
+            "agent_id": agent_id,
+            "subsystem": subsystem,
+            "decision_source": "llm",
+            "message": str(parsed.data.get("message", "")),
+            "reasoning": str(parsed.data.get("reasoning", "")),
+            "changes": changes,
+            "parse_status": parsed.status,
+            "parse_error": parsed.error,
+            "parse_notes": notes,
+            "raw_response_excerpt": parsed.raw_excerpt,
+        }
 
     def _run_step_llm(self, obs: EclssLoopObservation) -> StepEclssOutcome:
         outcome = StepEclssOutcome()
