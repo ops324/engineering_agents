@@ -108,20 +108,23 @@ def test_vllm_sessions_are_thread_local():
     import threading
 
     client = VllmClient()
-    ids: list[int] = []
+    # Hold the sessions, not their ids: a thread-local session is collected
+    # when its thread dies, and CPython hands the next allocation the same
+    # address often enough to fail this test at random.
+    sessions: list[object] = []
     barrier = threading.Barrier(2)
 
     def grab() -> None:
         barrier.wait()
-        ids.append(id(client._session))
+        sessions.append(client._session)
 
     threads = [threading.Thread(target=grab) for _ in range(2)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    assert len(ids) == 2
-    assert ids[0] != ids[1]
+    assert len(sessions) == 2
+    assert sessions[0] is not sessions[1]
 
 
 def test_fit_prompt_keeps_short_prompts():
