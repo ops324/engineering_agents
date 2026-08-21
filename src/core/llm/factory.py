@@ -62,6 +62,9 @@ def build_llm_client(llm_cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
     min_p = float(cfg.get("min_p", 0.05))
     think = cfg.get("think", False)
     max_concurrency = int(cfg["max_concurrency"]) if cfg.get("max_concurrency") is not None else -1
+    # Seed reaches the sampler only if it is threaded through here; recording
+    # it in the run summary alone proves nothing about what was sampled.
+    seed = int(cfg["seed"]) if cfg.get("seed") is not None else None
 
     if provider == "vllm":
         return VllmClient(
@@ -75,6 +78,7 @@ def build_llm_client(llm_cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
             api_timeout=resolve_vllm_api_timeout(cfg),
             api_key=resolve_vllm_api_key(cfg),
             max_concurrency=max_concurrency,
+            seed=seed,
         )
     api_timeout = int(cfg.get("api_timeout", 10))
     return OllamaClient(
@@ -88,4 +92,5 @@ def build_llm_client(llm_cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
         think=think,
         api_timeout=api_timeout,
         max_concurrency=max_concurrency,
+        seed=seed,
     )

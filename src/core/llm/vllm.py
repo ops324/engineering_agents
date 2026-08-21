@@ -173,9 +173,10 @@ class VllmClient(LLMClient):
         think: Optional[bool] = None,
         api_timeout: Optional[int] = None,
         api_key: str = DEFAULT_API_KEY,
+        seed: Optional[int] = None,
     ):
         resolved = _default_concurrency(model) if max_concurrency == -1 else max_concurrency
-        super().__init__(max_concurrency=resolved)
+        super().__init__(max_concurrency=resolved, seed=seed)
         self.base_url = normalize_vllm_base_url(base_url)
         self.model = model
         self.temperature = temperature
@@ -209,6 +210,7 @@ class VllmClient(LLMClient):
                 resolve_vllm_max_model_len(),
             )
         prompt = _fit_prompt_to_context(prompt, max_tokens)
+        recorded = False
         try:
             payload: Dict[str, Any] = {
                 "model": self.model,
@@ -217,6 +219,8 @@ class VllmClient(LLMClient):
                 "max_tokens": max_tokens,
                 "repetition_penalty": self.repeat_penalty,
             }
+            if self.seed is not None:
+                payload["seed"] = self.seed
             # vLLM MTP / speculative decoding rejects min_p and logit_bias.
             if self.think is not None:
                 payload["chat_template_kwargs"] = {"enable_thinking": bool(self.think)}
@@ -227,10 +231,20 @@ class VllmClient(LLMClient):
                 timeout=self.api_timeout,
             )
             response.raise_for_status()
-            message = (response.json().get("choices") or [{}])[0].get("message") or {}
+            body = response.json()
+            usage = body.get("usage") or {}
+            self._record_call(
+                ok=True,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+            )
+            recorded = True
+            message = (body.get("choices") or [{}])[0].get("message") or {}
             content = message.get("content") or ""
             return str(content).strip()
         except Exception as e:
+            if not recorded:
+                self._record_call(ok=False)
             detail = ""
             resp = getattr(e, "response", None)
             if resp is not None:

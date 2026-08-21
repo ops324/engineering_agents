@@ -52,9 +52,10 @@ class OllamaClient(LLMClient):
         json_format: bool = True,
         think: Optional[bool] = None,
         api_timeout: Optional[int] = None,
+        seed: Optional[int] = None,
     ):
         resolved = _default_concurrency(model) if max_concurrency == -1 else max_concurrency
-        super().__init__(max_concurrency=resolved)
+        super().__init__(max_concurrency=resolved, seed=seed)
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.temperature = temperature
@@ -68,18 +69,22 @@ class OllamaClient(LLMClient):
         self.api_url = f"{self.base_url}/api/generate"
 
     def generate(self, prompt: str) -> str:
+        recorded = False
         try:
+            options: Dict[str, Any] = {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+                "repeat_penalty": self.repeat_penalty,
+                "repeat_last_n": self.repeat_last_n,
+                "min_p": self.min_p,
+            }
+            if self.seed is not None:
+                options["seed"] = self.seed
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": self.temperature,
-                    "num_predict": self.max_tokens,
-                    "repeat_penalty": self.repeat_penalty,
-                    "repeat_last_n": self.repeat_last_n,
-                    "min_p": self.min_p,
-                },
+                "options": options,
             }
             if self.json_format:
                 payload["format"] = "json"
@@ -87,8 +92,17 @@ class OllamaClient(LLMClient):
                 payload["think"] = self.think
             response = requests.post(self.api_url, json=payload, timeout=self.api_timeout)
             response.raise_for_status()
-            return response.json().get("response", "").strip()
+            body = response.json()
+            self._record_call(
+                ok=True,
+                prompt_tokens=body.get("prompt_eval_count", 0),
+                completion_tokens=body.get("eval_count", 0),
+            )
+            recorded = True
+            return body.get("response", "").strip()
         except Exception as e:
+            if not recorded:
+                self._record_call(ok=False)
             logger.error("OllamaClient.generate error: %s", e)
             return ""
 
