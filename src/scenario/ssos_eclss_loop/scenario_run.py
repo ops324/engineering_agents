@@ -14,7 +14,9 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from core.code_version import describe_code_version
 from core.event_log import EventLog
+from core.llm.factory import describe_llm_target
 from core.scenario import Scenario
 from environment.ssos.eclss.backend import EclssBackend
 from environment.ssos.eclss.types import EclssTelemetrySnapshot
@@ -363,6 +365,14 @@ class SsosEclssLoopScenario(Scenario):
         bind_plant_sim_crew_and_team(config, agents_config, backend_kind)
         sim_cfg = config.get("simulation", {})
         steps = int(sim_cfg.get("steps", 8))
+        # The seed has to reach the sampler, not just the summary. Recording a
+        # seed that nothing consumed makes repetitions look controlled when
+        # they are independent re-rolls, which is the one thing the seed is
+        # supposed to rule out (design.md 10.3).
+        if agents_config and sim_cfg.get("seed") is not None:
+            seeded_llm = dict(agents_config.get("llm") or {})
+            seeded_llm.setdefault("seed", int(sim_cfg["seed"]))
+            agents_config = {**agents_config, "llm": seeded_llm}
         output_cfg = config.get("output", {})
         # Persist the resolved kind (CLI / SSOS_ECLSS_BACKEND may differ from YAML).
         backend_section = config.get("backend")
@@ -552,6 +562,24 @@ class SsosEclssLoopScenario(Scenario):
                 }
             )
         )
+
+        # A run that cannot name the code and the backend that produced it
+        # cannot be pooled with another run, and nothing downstream can tell
+        # that it was pooled wrongly.
+        summary["code_version"] = describe_code_version()
+        if summary["agents_mode"] == "llm":
+            llm_cfg = (agents_config or {}).get("llm") or {}
+            provider, base_url, model = describe_llm_target(llm_cfg)
+            summary["llm"] = _omit_nulls(
+                {
+                    "provider": provider,
+                    "base_url": base_url,
+                    "model": model,
+                    "temperature": llm_cfg.get("temperature"),
+                    "max_tokens": llm_cfg.get("max_tokens"),
+                    "seed": llm_cfg.get("seed"),
+                }
+            )
 
         if isinstance(team, SsosEclssLoopTeam):
             summary["team_count"] = team.team_cfg.count
