@@ -6,6 +6,8 @@ from core.llm.vllm import (
     DEFAULT_BASE_URL,
     DEFAULT_MAX_MODEL_LEN,
     VllmClient,
+    _default_concurrency,
+    parse_model_size_b,
     _CHAT_TEMPLATE_OVERHEAD_TOKENS,
     _CHARS_PER_TOKEN,
     _clamp_completion_tokens,
@@ -102,6 +104,31 @@ def test_vllm_generate_returns_empty_on_error(monkeypatch):
 def test_vllm_8b_default_concurrency_covers_hundred_agents():
     client = VllmClient(model="qwen3-8b")
     assert client._max_concurrency == 100
+
+
+def test_model_size_is_read_at_a_digit_boundary():
+    # The "7b" inside "27b" must not be read as a 7B: a digit precedes it.
+    assert parse_model_size_b("qwen3.8-27b-uncensored") == 27.0
+    assert parse_model_size_b("qwen3-8b") == 8.0
+    assert parse_model_size_b("qwen3-32b") == 32.0
+    assert parse_model_size_b("qwen2.5:14b") == 14.0
+    assert parse_model_size_b("unlabelled-model") is None
+
+
+def test_27b_is_not_handed_the_8b_concurrency_cap():
+    # Regression: substring matching gave this model a 100-way in-flight cap
+    # on a shared GPU because "27b" contains "7b".
+    assert _default_concurrency("qwen3.8-27b-uncensored") == 32
+    assert VllmClient(model="qwen3.8-27b-uncensored")._max_concurrency == 32
+
+
+def test_known_model_caps_are_unchanged_by_the_size_rewrite():
+    assert _default_concurrency("qwen3-8b") == 100
+    assert _default_concurrency("qwen3-32b") == 32
+    assert _default_concurrency("qwen2.5:14b") == 64
+    assert _default_concurrency("llama-3.1-70b") == 16
+    # No size in the id: fall back rather than guess.
+    assert _default_concurrency("unlabelled-model") == 64
 
 
 def test_vllm_sessions_are_thread_local():

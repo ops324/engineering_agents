@@ -1,17 +1,21 @@
 """OpenAI-compatible client for the lab vLLM server.
 
-The GPU box (gpu-sv-008) exposes two endpoints — see
-https://github.com/hirototamura/vllm_server :
+The GPU box (gpu-sv-008) serves on the lab LAN or via VPN; not a public
+address. See https://github.com/hirototamura/vllm_server .
 
-- http://10.10.0.108:8000/v1  model qwen3-8b   (daily deliberation)
-- http://10.10.0.108:8001/v1  model qwen3-32b  (heavier judgment)
-
-Reachable on the lab LAN or via VPN; not a public address.
+Which model sits behind which port is decided at the server, not here, and it
+changes faster than this file does: :8000 went qwen3-8b -> qwen3.8-27b-uncensored
+on 2026-08-19 and back to Qwen/Qwen3-8B on 2026-08-22, with :8001 down
+throughout. Ask the server rather than trusting this file -- ``GET
+{base_url}/models`` returns the ids actually being served. Code that assumes a
+port implies a model will run the wrong arm of an experiment and say nothing
+about it.
 """
 from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from typing import Any, Dict, Optional
 
@@ -38,19 +42,43 @@ _CHAT_TEMPLATE_OVERHEAD_TOKENS = 256
 _CHARS_PER_TOKEN = 3
 
 # Lab server: 8B is 6-way replicated (theoretical ~384); 32B is capped at 32.
-_MODEL_CONCURRENCY_DEFAULTS = [
-    (["70b", "72b"], 16),
-    (["32b", "34b"], 32),
-    (["14b", "13b"], 64),
-    (["7b", "8b"], 100),
+#
+# Keyed on parameter count, not on substrings of the model id. Substring
+# matching reads "qwen3.8-27b-uncensored" as a 7B/8B because "27b" contains
+# "7b", and hands a 27B model a 100-way in-flight cap on a shared GPU. Sizes
+# are matched at a digit boundary and compared numerically instead, so an id
+# nobody anticipated still lands in the right bucket.
+_MODEL_CONCURRENCY_BY_SIZE_B = [
+    (70, 16),
+    (24, 32),   # 27B and 32B belong together; the old table had no 27B entry
+    (12, 64),
+    (0, 100),
 ]
 _CONCURRENCY_FALLBACK = 64
 
+# "8b" / "27b" / "3.8b", but not the "3.8" in "qwen3.8-27b" (not followed by b)
+# and not the "7b" inside "27b" (a digit precedes it).
+_SIZE_IN_MODEL_ID = re.compile(r"(?<![0-9.])([0-9]+(?:\.[0-9]+)?)\s*b\b")
+
+
+def parse_model_size_b(model: str) -> Optional[float]:
+    """Parameter count in billions read off a served-model id, or None.
+
+    Returns the largest match, so an id carrying more than one size settles on
+    the bigger one rather than on whichever appears first.
+    """
+    matches = _SIZE_IN_MODEL_ID.findall((model or "").lower())
+    if not matches:
+        return None
+    return max(float(m) for m in matches)
+
 
 def _default_concurrency(model: str) -> int:
-    lower = model.lower()
-    for keywords, limit in _MODEL_CONCURRENCY_DEFAULTS:
-        if any(k in lower for k in keywords):
+    size = parse_model_size_b(model)
+    if size is None:
+        return _CONCURRENCY_FALLBACK
+    for threshold, limit in _MODEL_CONCURRENCY_BY_SIZE_B:
+        if size >= threshold:
             return limit
     return _CONCURRENCY_FALLBACK
 
