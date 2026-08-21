@@ -743,6 +743,7 @@ class SsosEclssLoopTeam(Team):
             return {
                 "design_domain": DESIGN_DOMAIN,
                 "proposed_by": rep,
+                "proposer_kind": "operator_rep",
                 "decision_source": "llm_parse_fail",
                 "message": "",
                 "reasoning": "LLM response could not be parsed.",
@@ -755,6 +756,7 @@ class SsosEclssLoopTeam(Team):
         return {
             "design_domain": DESIGN_DOMAIN,
             "proposed_by": rep,
+            "proposer_kind": "operator_rep",
             "decision_source": "llm",
             "message": str(parsed.data.get("message", "")),
             "reasoning": str(parsed.data.get("reasoning", "")),

@@ -488,6 +488,7 @@ def build_design_proposals_from_run(
     doc: Dict[str, Any] = {
         "design_domain": DESIGN_DOMAIN,
         "proposed_by": proposed_by,
+        "proposer_kind": "operator_rep",
         "decision_source": decision_source,
         "message": message,
         "changes": changes,

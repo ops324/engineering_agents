@@ -182,7 +182,7 @@ def test_without_design_team_an_operator_still_proposes():
     proposals = team.propose_post_run_design(_summary())
 
     assert team.design_agents == {}
-    assert "proposer_kind" not in proposals
+    assert proposals["proposer_kind"] == "operator_rep"
     assert proposals["proposed_by"] in team.team_cfg.agent_ids
 
 

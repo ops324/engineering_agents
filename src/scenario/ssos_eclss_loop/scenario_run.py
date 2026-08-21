@@ -14,7 +14,9 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from core.code_version import describe_code_version
 from core.event_log import EventLog
+from core.llm.factory import describe_llm_target
 from core.scenario import Scenario
 from environment.ssos.eclss.backend import EclssBackend
 from environment.ssos.eclss.types import EclssTelemetrySnapshot
@@ -218,6 +220,14 @@ class SsosEclssLoopScenario(Scenario):
             agents_config = merge_labeled_policy_from_thresholds(agents_config, thresholds)
         sim_cfg = config.get("simulation", {})
         steps = int(sim_cfg.get("steps", 8))
+        # The seed has to reach the sampler, not just the summary. Recording a
+        # seed that nothing consumed makes repetitions look controlled when
+        # they are independent re-rolls, which is the one thing the seed is
+        # supposed to rule out (design.md 10.3).
+        if agents_config and sim_cfg.get("seed") is not None:
+            seeded_llm = dict(agents_config.get("llm") or {})
+            seeded_llm.setdefault("seed", int(sim_cfg["seed"]))
+            agents_config = {**agents_config, "llm": seeded_llm}
         output_cfg = config.get("output", {})
         backend_kind = resolve_backend_kind(config, overrides)
         # Persist the resolved kind (CLI / SSOS_ECLSS_BACKEND may differ from YAML).
@@ -390,6 +400,24 @@ class SsosEclssLoopScenario(Scenario):
             )
         )
 
+        # A run that cannot name the code and the backend that produced it
+        # cannot be pooled with another run, and nothing downstream can tell
+        # that it was pooled wrongly.
+        summary["code_version"] = describe_code_version()
+        if summary["agents_mode"] == "llm":
+            llm_cfg = (agents_config or {}).get("llm") or {}
+            provider, base_url, model = describe_llm_target(llm_cfg)
+            summary["llm"] = _omit_nulls(
+                {
+                    "provider": provider,
+                    "base_url": base_url,
+                    "model": model,
+                    "temperature": llm_cfg.get("temperature"),
+                    "max_tokens": llm_cfg.get("max_tokens"),
+                    "seed": llm_cfg.get("seed"),
+                }
+            )
+
         if isinstance(team, SsosEclssLoopTeam) and team.mode in {"labeled_rule_base", "llm"}:
             summary["team_count"] = team.team_cfg.count
             summary["agent_ids"] = list(team.team_cfg.agent_ids)
@@ -409,6 +437,17 @@ class SsosEclssLoopScenario(Scenario):
             if team.mode == "llm":
                 summary["max_actions_per_step"] = team.max_actions_per_step
             proposals = team.propose_post_run_design(summary)
+            # Who actually proposed, not who was configured to. The design
+            # team is a no-op in labeled_rule_base, and a summary claiming it
+            # ran reads as "the manipulation was applied and did nothing" —
+            # the most expensive possible way to be wrong about a null result.
+            actual_proposer_kind = proposals.get("proposer_kind")
+            if actual_proposer_kind:
+                summary["design_proposer_kind"] = actual_proposer_kind
+            # Counted after the proposal round so post-run design is included.
+            usage_of = getattr(getattr(team, "llm_client", None), "usage", None)
+            if callable(usage_of):
+                summary["llm_usage"] = usage_of()
             # L8/B: only persist when there is at least one change so
             # --apply-proposals never no-ops from an empty document.
             change_count = len(proposals.get("changes") or [])
