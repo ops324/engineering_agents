@@ -27,6 +27,7 @@ from core.llm.base import LLMClient
 from core.llm.factory import build_llm_client
 from environment.ssos.eclss.backend import EclssBackend
 from environment.ssos.eclss.types import ArsGoal, OgsGoal, WrsGoal
+from scenario.agents.command_admissibility import is_command_admissible
 from scenario.agents.eclss_loop_types import (
     EclssLoopObservation,
     EclssOperationalCommand,
@@ -162,7 +163,22 @@ class SsosEclssLoopTeam(Team):
 
     def apply_outcome(self, backend: EclssBackend, outcome: StepEclssOutcome) -> List[Dict[str, Any]]:
         events: List[Dict[str, Any]] = []
+        # Single choke point for every command, whatever produced it. The rule
+        # base passes through the same gate as the LLM: a policy can be
+        # misconfigured too, and a gate that only one path crosses is not a
+        # gate. Structural only — scarcity belongs to the plant, which already
+        # saturates requests rather than failing them.
         for cmd in outcome.commands:
+            verdict = is_command_admissible(cmd.kind, cmd.payload)
+            if not verdict.admissible:
+                events.append({
+                    "kind": "/eclss/events/operational_inadmissible",
+                    "command": cmd.to_dict(),
+                    "message": verdict.summary,
+                    "admissibility": verdict.to_dict(),
+                    "decision_source": "deterministic_gate",
+                })
+                continue
             event = self._apply_command(backend, cmd)
             if event is not None:
                 events.append(event)
