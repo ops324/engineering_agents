@@ -339,3 +339,33 @@ def test_a_client_without_accounting_is_skipped_not_fatal():
     class Bare:
         model = "fake"
     assert _Team(Bare(), Bare()).llm_usage() == {}
+
+
+# --- the design-proposal contract ----------------------------------------
+
+def test_the_proposal_contract_names_the_targets_the_applier_accepts():
+    """On 2026-08-23 every set_parameter proposal in twenty runs named a path
+    outside the allow-list — five from the 9B, twelve from the 27B — because
+    the contract said "dotted.config.path" and nothing else. Inventing a
+    plausible path is what not being told produces."""
+    from core.agents.persona import eclss_design_proposal_contract
+    from scenario.ssos_eclss_loop.design_proposals import ALLOWED_SET_PARAMETER_TARGETS
+
+    contract = eclss_design_proposal_contract()
+    for target in ALLOWED_SET_PARAMETER_TARGETS:
+        assert f'"{target}"' in contract
+    assert "No other target exists" in contract
+
+
+def test_the_contract_reads_the_allow_list_rather_than_copying_it():
+    """A second copy drifts. Adding a target must reach the contract with no
+    further edit."""
+    import core.agents.persona as persona
+    import scenario.ssos_eclss_loop.design_proposals as proposals
+
+    original = proposals.ALLOWED_SET_PARAMETER_TARGETS
+    try:
+        proposals.ALLOWED_SET_PARAMETER_TARGETS = frozenset({"a.new.target"})
+        assert '"a.new.target"' in persona.eclss_design_proposal_contract()
+    finally:
+        proposals.ALLOWED_SET_PARAMETER_TARGETS = original

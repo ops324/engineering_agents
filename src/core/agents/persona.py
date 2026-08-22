@@ -310,6 +310,13 @@ def eclss_operational_action_contract() -> str:
     )
 
 
+def _allowed_set_parameter_targets() -> str:
+    """Read the applier's allow-list at call time; never a second copy of it."""
+    from scenario.ssos_eclss_loop.design_proposals import ALLOWED_SET_PARAMETER_TARGETS
+
+    return ", ".join(f'"{t}"' for t in sorted(ALLOWED_SET_PARAMETER_TARGETS))
+
+
 def eclss_design_proposal_contract() -> str:
     return (
         f"{json_envelope_preamble()}"
@@ -320,7 +327,14 @@ def eclss_design_proposal_contract() -> str:
         'change_kind in ["action_profile","service_config","set_parameter","graph_rewire"]. '
         'action_profile payload: {"subsystem":"ars|ogs|wrs","action":"...","fields":{...}}. '
         'service_config payload: {"service":"request_co2|request_o2", ...}. '
-        'set_parameter payload: {"target":"dotted.config.path","value":...}. '
+        # The allow-list, generated from the one the applier enforces so the two
+        # cannot drift. Naming a path that is merely plausible is the default
+        # outcome of not being told: on 2026-08-23 every set_parameter proposal
+        # across twenty runs — five from the 9B, twelve from the 27B — invented
+        # a path outside this list, and applying any of them raises.
+        f'set_parameter payload: {{"target": one of [{_allowed_set_parameter_targets()}], "value":...}}. '
+        "No other target exists; a path outside that list is refused when applied, "
+        "so propose a different change_kind rather than inventing one. "
         "graph_rewire payload: ROS remapping manifest for the next launch. "
         "Proposals are post-run only — they will NOT be applied during this simulation."
     )
