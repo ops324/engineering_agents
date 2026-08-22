@@ -36,7 +36,12 @@ from scenario.ssos_eclss_loop.health import (
     health_inputs_note,
 )
 from scenario.ssos_eclss_loop.loop_mock_backend import LoopMockEclssBackend
-from core.agents.adapter import adapter_provenance, apply_adapter, load_adapter
+from core.agents.adapter import (
+    adapter_provenance,
+    apply_adapter,
+    load_adapter,
+    proposal_provenance,
+)
 from scenario.ssos_eclss_loop.design_proposals import (
     apply_design_proposals,
     load_design_proposals,
@@ -473,6 +478,23 @@ class SsosEclssLoopScenario(Scenario):
                 proposals_path = run_dir / "design_proposals.json"
                 write_design_proposals(proposals_path, proposals)
                 summary["design_proposals_path"] = str(proposals_path)
+
+            # F7. Written whenever a Meta agent ran, including when it proposes
+            # nothing: "the system was asked and chose not to change itself" is
+            # a result, and an absent file cannot say it.
+            adapter_proposal = team.propose_adapter_update(summary)
+            if adapter_proposal is not None:
+                proposal_path = run_dir / "adapter_proposal.json"
+                proposal_path.write_text(
+                    json.dumps(adapter_proposal, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                summary["adapter_proposal"] = proposal_provenance(adapter_proposal)
+                summary["adapter_proposal_path"] = str(proposal_path)
+                # Counted after the meta round so its calls are not lost.
+                usage_of = getattr(getattr(team, "llm_client", None), "usage", None)
+                if callable(usage_of):
+                    summary["llm_usage"] = usage_of()
 
         log.write_summary(summary)
 

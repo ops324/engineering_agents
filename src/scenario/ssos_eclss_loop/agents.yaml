@@ -63,6 +63,18 @@ policy:
 #     - fault_detection
 #     - systems_integration
 
+# F7 — the Meta agent (design.md 4). Commented out by default, which is
+# F7=absent: no adapter proposal is made and the run behaves exactly as it did
+# before this existed. Enable it and the agent writes adapter_proposal.json
+# after the run, naming the crew it would assemble next time — team size,
+# archetype allocation, discourse window, memory limit. It proposes only;
+# nothing is applied until a next run is started with --adapter. It cannot
+# reach thresholds, operating policy, the model or the gates: those are not
+# fields in core/agents/adapter.py, so there is nowhere to write them.
+# llm mode only — a rule base has nothing to say about its own composition.
+# meta_agent:
+#   id: meta_agent_1
+
 llm:
   # ollama (local daemon) or vllm (lab GPU server: https://github.com/hirototamura/vllm_server)
   provider: ollama

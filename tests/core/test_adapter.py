@@ -161,3 +161,79 @@ def test_a_file_that_reaches_outside_the_surface_fails_to_load(tmp_path):
     path.write_text(json.dumps({"schema_version": 1, "fields": {"policy": {}}}))
     with pytest.raises(ValueError):
         load_adapter(path)
+
+
+# --- the Meta agent's side ------------------------------------------------
+
+from core.agents.adapter import (  # noqa: E402
+    META_ADAPTER_PERSONA,
+    meta_adapter_contract,
+    partition_proposal,
+    proposal_provenance,
+)
+
+
+def test_the_contract_is_generated_from_the_schema():
+    """A hand-written contract drifts from the fields it describes. This one
+    cannot: every writable field appears, and nothing else does."""
+    contract = meta_adapter_contract()
+    for name in ADAPTER_FIELDS:
+        assert f'"{name}"' in contract
+    assert "thresholds" in contract and "outside this surface" in contract
+
+
+def test_the_persona_does_not_invite_plant_changes():
+    assert "do not propose changes to it" in META_ADAPTER_PERSONA
+    assert "legitimate answer" in META_ADAPTER_PERSONA   # proposing nothing is allowed
+
+
+def test_a_proposal_keeps_the_writable_part_and_records_the_rest():
+    accepted, rejected = partition_proposal(
+        {"team_count": 6, "thresholds.co2_storage_critical_kg": 99, "R.similarity": "cosine"}
+    )
+    assert accepted == {"team_count": 6}
+    assert [r["field"] for r in rejected] == [
+        "thresholds.co2_storage_critical_kg", "R.similarity",
+    ]
+    assert "not an adapter field" in rejected[0]["reason"]
+    assert "no implementation" in rejected[1]["reason"]
+
+
+def test_an_out_of_range_value_is_rejected_not_clamped():
+    accepted, rejected = partition_proposal({"team_count": 400})
+    assert accepted == {} and rejected and "above the maximum" in rejected[0]["reason"]
+
+
+def test_a_non_object_fields_value_is_a_rejection_not_a_crash():
+    accepted, rejected = partition_proposal("team_count=6")
+    assert accepted == {} and rejected[0]["field"] == "(fields)"
+
+
+def test_attempts_on_the_frozen_surface_are_counted():
+    """The design claims a gate-loosening proposal cannot be expressed. The
+    count is what turns that claim into something measurable."""
+    accepted, rejected = partition_proposal({"team_count": 6, "policy": {}, "llm.model": "x"})
+    p = proposal_provenance({
+        "proposed_by": "meta_agent_1", "decision_source": "llm",
+        "adapter": {"fields": accepted}, "rejected": rejected,
+    })
+    assert p["frozen_surface_attempts"] == 2
+    assert p["accepted_fields"] == ["team_count"]
+    assert p["rejected_fields"] == ["policy", "llm.model"]
+    assert p["proposes_change"] is True
+
+
+def test_proposing_nothing_is_recorded_as_a_result():
+    p = proposal_provenance({
+        "proposed_by": "meta_agent_1", "decision_source": "llm",
+        "adapter": {"fields": {}}, "rejected": [],
+    })
+    assert p["proposes_change"] is False and p["frozen_surface_attempts"] == 0
+
+
+def test_an_accepted_proposal_is_directly_applicable():
+    """What the Meta agent proposes must be what the next run can apply, with
+    no second translation step to disagree with the first."""
+    accepted, _ = partition_proposal({"team_count": 6, "policy": {}})
+    out = apply_adapter(AGENTS_CONFIG, {"schema_version": ADAPTER_SCHEMA_VERSION, "fields": accepted})
+    assert out["team"]["count"] == 6

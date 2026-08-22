@@ -33,7 +33,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.agents.persona import ARCHETYPE_LENSES
+from core.agents.persona import (
+    ARCHETYPE_LENSES,
+    json_envelope_preamble,
+    output_word_limits_clause,
+)
 
 # Schema version. Bumped when a field is added or its meaning changes, so a
 # stored adapter cannot be silently reinterpreted by later code.
@@ -206,3 +210,96 @@ def write_adapter(path: Path, update: Dict[str, Any]) -> None:
         raise ValueError("refusing to write an invalid adapter:\n  - " + "\n  - ".join(errors))
     payload = {"schema_version": ADAPTER_SCHEMA_VERSION, "fields": dict(update.get("fields") or {})}
     Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# The Meta agent's side of the surface
+#
+# design.md §4 is explicit that the Meta agent "only proposes an adapter
+# update; acceptance is decided by the archive and the evaluation" (§5). So
+# nothing here applies anything. It turns a reply into a candidate, and says
+# what in that reply was not writable.
+# ---------------------------------------------------------------------------
+
+META_ADAPTER_PERSONA = (
+    "Meta agent. The simulation is over. You do not operate the plant and you do not "
+    "propose changes to it — other agents do that.\n"
+    "You change how the crew itself is put together for the next run: how many operators "
+    "there are, which thinking lenses they are given, how much of the team discourse each "
+    "one sees, and how much each one privately remembers.\n"
+    "Ground every change in what this run's evidence shows about the crew's behaviour — "
+    "who acted, who repeated each other, what went unattended — not in what you expected.\n"
+    "Propose nothing when the run gives you no evidence for a change. An unchanged "
+    "configuration is a legitimate answer."
+)
+
+
+def meta_adapter_contract() -> str:
+    """The reply contract, generated from the schema so it cannot drift from it."""
+    lines = []
+    for name, spec in sorted(ADAPTER_FIELDS.items()):
+        if spec.kind == "int":
+            bounds = f" ({spec.minimum}..{spec.maximum})" if spec.minimum is not None else ""
+            lines.append(f'"{name}": integer{bounds} — {spec.note}')
+        else:
+            lines.append(f'"{name}": list of {sorted(ARCHETYPE_LENSES)} — {spec.note}')
+    return (
+        # The envelope preamble is what makes the reply parseable at all. Every
+        # other contract opens with it; leaving it off produced a Meta agent
+        # whose every reply failed to parse, which reads exactly like an agent
+        # with nothing to say.
+        f"{json_envelope_preamble()}"
+        'Required keys: "message", "reasoning", "fields". '
+        '"fields" is an object holding only these keys, and may be empty: '
+        + "; ".join(lines)
+        + f". {output_word_limits_clause()} "
+        + "Nothing else is writable: thresholds, alarm bands, operating policy, the "
+        "model, the safety gates and the evaluator are outside this surface and a key "
+        "naming any of them is discarded. Propose the next run's crew, not this run's "
+        "actions."
+    )
+
+
+def partition_proposal(raw_fields: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Split a proposed reply into what is writable and what is not.
+
+    Unlike :func:`apply_adapter`, which is all-or-nothing, this keeps the
+    writable part and records the rest. The two rules are for two different
+    acts: applying a configuration nobody proposed is a corruption, whereas a
+    proposal is a candidate that something else decides on — and what a
+    self-modifying system *tried* to reach for is evidence worth keeping rather
+    than an error to swallow. Attempts on the frozen surface are counted, not
+    hidden.
+    """
+    accepted: Dict[str, Any] = {}
+    rejected: List[Dict[str, Any]] = []
+    if not isinstance(raw_fields, dict):
+        return accepted, [{
+            "field": "(fields)",
+            "value": raw_fields,
+            "reason": f"expected an object, got {type(raw_fields).__name__}",
+        }]
+    for name, value in raw_fields.items():
+        errors = validate_adapter({"fields": {name: value}})
+        if errors:
+            rejected.append({"field": str(name), "value": value, "reason": errors[0]})
+        else:
+            accepted[str(name)] = value
+    return accepted, rejected
+
+
+def proposal_provenance(proposal: Dict[str, Any]) -> Dict[str, Any]:
+    """The summary's view of a Meta agent proposal. Never part of a score."""
+    fields = ((proposal or {}).get("adapter") or {}).get("fields") or {}
+    rejected = (proposal or {}).get("rejected") or []
+    return {
+        "proposed_by": (proposal or {}).get("proposed_by"),
+        "decision_source": (proposal or {}).get("decision_source"),
+        "accepted_fields": sorted(fields),
+        "rejected_fields": [r.get("field") for r in rejected],
+        # How often the system reached for something it cannot have. The design
+        # claims such a proposal is impossible to express; this counts the
+        # attempts, which is the only way that claim becomes measurable.
+        "frozen_surface_attempts": len(rejected),
+        "proposes_change": bool(fields),
+    }

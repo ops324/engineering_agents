@@ -11,6 +11,7 @@ from core.agents.base import Team
 from core.agents.memory import TeamMemoryStore
 from core.agents.persona import (
     DesignTeamConfig,
+    Persona,
     PersonaAgent,
     TeamConfig,
     build_design_personas,
@@ -32,6 +33,12 @@ from scenario.agents.eclss_loop_types import (
     EclssLoopObservation,
     EclssOperationalCommand,
     StepEclssOutcome,
+)
+from core.agents.adapter import (
+    ADAPTER_SCHEMA_VERSION,
+    META_ADAPTER_PERSONA,
+    meta_adapter_contract,
+    partition_proposal,
 )
 from scenario.ssos_eclss_loop.design_proposals import (
     DESIGN_DOMAIN,
@@ -140,6 +147,83 @@ class SsosEclssLoopTeam(Team):
                 )
                 for agent_id, persona in design_personas.items()
             }
+
+        # The Meta agent (design.md 4). Absent by default, which is F7=absent:
+        # no adapter proposal is made and the run is what it was before. It is
+        # a separate agent rather than a borrowed operator for the same reason
+        # the design proposers were separated — "who proposed this" has to be
+        # answerable from the artifact.
+        self.meta_agent_id: Optional[str] = None
+        self.meta_agent: Optional[PersonaAgent] = None
+        meta_raw = config.get("meta_agent") or {}
+        if meta_raw and self.mode == "llm":
+            self.meta_agent_id = str(meta_raw.get("id") or "meta_agent_1")
+            meta_memory = TeamMemoryStore(
+                agent_ids=[self.meta_agent_id],
+                memory_limit=int(config.get("memory_limit", 8)),
+                discourse_window=int(config.get("discourse_window", 12)),
+            )
+            self.meta_agent = PersonaAgent(
+                persona=Persona(agent_id=self.meta_agent_id, persona=META_ADAPTER_PERSONA),
+                memory=meta_memory.agent_memories[self.meta_agent_id],
+                llm_client=self.llm_client,
+            )
+
+    def propose_adapter_update(self, summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """One typed candidate for the next run's crew, or None when F7 is absent.
+
+        Proposes only. design.md 4 puts acceptance with the archive and the
+        evaluation, so nothing here is applied — not to this run, and not to
+        the next one without something else choosing it.
+        """
+        if self.meta_agent is None or self.meta_agent_id is None:
+            return None
+
+        situation = build_llm_post_run_situation(
+            summary,
+            self.memory_store.discourse.recent(),
+            {},
+        )
+        ctx = self.meta_agent.build_context(
+            step=int(summary.get("steps", 0)),
+            phase=DeliberationPhase.POST_RUN,
+            situation=situation,
+            step_discourse=[],
+            team_discourse=self.memory_store.discourse.recent(),
+        )
+        parsed = self.meta_agent.deliberate(
+            ctx,
+            meta_adapter_contract(),
+            PersonaAgent.phase_hint(DeliberationPhase.POST_RUN),
+            ("message", "reasoning", "fields"),
+        )
+        if parsed is None:
+            return {
+                "schema_version": ADAPTER_SCHEMA_VERSION,
+                "proposed_by": self.meta_agent_id,
+                "decision_source": "llm_parse_fail",
+                "message": "",
+                "reasoning": "LLM response could not be parsed.",
+                "adapter": {"schema_version": ADAPTER_SCHEMA_VERSION, "fields": {}},
+                "rejected": [],
+                # Without this a parse failure and an agent with nothing to say
+                # look identical in the artifact.
+                "raw_response_excerpt": getattr(self.meta_agent, "last_raw_excerpt", None),
+            }
+
+        accepted, rejected = partition_proposal(parsed.data.get("fields", {}))
+        return {
+            "schema_version": ADAPTER_SCHEMA_VERSION,
+            "proposed_by": self.meta_agent_id,
+            "decision_source": "llm",
+            "message": str(parsed.data.get("message", "")),
+            "reasoning": str(parsed.data.get("reasoning", "")),
+            "adapter": {"schema_version": ADAPTER_SCHEMA_VERSION, "fields": accepted},
+            "rejected": rejected,
+            "parse_status": parsed.status,
+            "parse_error": parsed.error,
+            "raw_response_excerpt": parsed.raw_excerpt,
+        }
 
     def _action_rep_id(self, step: int) -> str:
         """Round-robin representative for 0-based scenario steps (`step % N`)."""
