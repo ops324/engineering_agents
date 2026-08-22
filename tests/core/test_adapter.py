@@ -237,3 +237,44 @@ def test_an_accepted_proposal_is_directly_applicable():
     accepted, _ = partition_proposal({"team_count": 6, "policy": {}})
     out = apply_adapter(AGENTS_CONFIG, {"schema_version": ADAPTER_SCHEMA_VERSION, "fields": accepted})
     assert out["team"]["count"] == 6
+
+
+# --- what the Meta agent can see ------------------------------------------
+
+from core.agents.adapter import describe_current  # noqa: E402
+
+
+def test_the_agent_is_shown_the_values_it_is_being_asked_to_change():
+    """The pilot ran four generations without this and oscillated 150/50/150/50
+    on a field it could not observe, justifying each direction fluently."""
+    text = describe_current(
+        {"team_count": 10, "discourse_window": 22, "memory_limit": 30, "archetypes": []}
+    )
+    assert "discourse_window=22" in text
+    assert "memory_limit=30" in text
+    assert "team_count=10" in text
+
+
+def test_the_lens_composition_is_shown_as_counts_not_as_a_list():
+    """Ten agents holding four lenses is 3/3/2/2, and the proportion is the
+    thing being revised — a bare list of names does not show it."""
+    text = describe_current({
+        "team_count": 10, "discourse_window": 22, "memory_limit": 30,
+        "archetypes": ["failure_mode"] * 7 + ["improviser"] * 3,
+    })
+    assert "failure_mode x7" in text and "improviser x3" in text
+
+
+def test_a_homogeneous_crew_says_so_rather_than_showing_an_empty_list():
+    text = describe_current(
+        {"team_count": 10, "discourse_window": 22, "memory_limit": 30, "archetypes": []}
+    )
+    assert "homogeneous" in text
+
+
+def test_the_contract_explains_that_repeats_set_the_proportion():
+    """The lever existed from the start and was never described, so three
+    generations of proposals never used it."""
+    contract = meta_adapter_contract()
+    assert "Repeating a name weights the allocation" in contract
+    assert "seven and three" in contract

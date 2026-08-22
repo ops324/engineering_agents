@@ -37,6 +37,7 @@ from scenario.agents.eclss_loop_types import (
 from core.agents.adapter import (
     ADAPTER_SCHEMA_VERSION,
     META_ADAPTER_PERSONA,
+    describe_current,
     meta_adapter_contract,
     partition_proposal,
 )
@@ -153,6 +154,16 @@ class SsosEclssLoopTeam(Team):
         # a separate agent rather than a borrowed operator for the same reason
         # the design proposers were separated — "who proposed this" has to be
         # answerable from the artifact.
+        # The adapter fields as they actually stand for this run. Recorded here
+        # once so the summary and the Meta agent's prompt cannot disagree about
+        # what the crew was.
+        self.adapter_state: Dict[str, Any] = {
+            "team_count": self.team_cfg.count,
+            "discourse_window": int(config.get("discourse_window", 12)),
+            "memory_limit": int(config.get("memory_limit", 8)),
+            "archetypes": [lens for _, lens in self.team_cfg.archetypes],
+        }
+
         self.meta_agent_id: Optional[str] = None
         self.meta_agent: Optional[PersonaAgent] = None
         meta_raw = config.get("meta_agent") or {}
@@ -179,10 +190,10 @@ class SsosEclssLoopTeam(Team):
         if self.meta_agent is None or self.meta_agent_id is None:
             return None
 
-        situation = build_llm_post_run_situation(
-            summary,
-            self.memory_store.discourse.recent(),
-            {},
+        situation = (
+            build_llm_post_run_situation(summary, self.memory_store.discourse.recent(), {})
+            + "\n\n"
+            + describe_current(self.adapter_state)
         )
         ctx = self.meta_agent.build_context(
             step=int(summary.get("steps", 0)),

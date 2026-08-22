@@ -75,7 +75,8 @@ ADAPTER_FIELDS: Dict[str, FieldSpec] = {
     ),
     "archetypes": FieldSpec(
         surface="C", path=("team", "archetypes"), kind="lens_list",
-        note="thinking lenses, dealt round-robin over the crew; [] is a homogeneous team",
+        note=("thinking lenses, dealt round-robin over the crew, so repeats set the "
+              "proportion; [] is a homogeneous team"),
     ),
     "discourse_window": FieldSpec(
         surface="C", path=("discourse_window",), kind="int", minimum=0, maximum=200,
@@ -242,7 +243,13 @@ def meta_adapter_contract() -> str:
             bounds = f" ({spec.minimum}..{spec.maximum})" if spec.minimum is not None else ""
             lines.append(f'"{name}": integer{bounds} — {spec.note}')
         else:
-            lines.append(f'"{name}": list of {sorted(ARCHETYPE_LENSES)} — {spec.note}')
+            lines.append(
+                f'"{name}": list of {sorted(ARCHETYPE_LENSES)} — {spec.note}. '
+                "Repeating a name weights the allocation: with ten operators "
+                '["first_principles","first_principles","failure_mode"] gives seven and '
+                "three, not a third each. Say the proportion you want by how often you "
+                "name each lens."
+            )
     return (
         # The envelope preamble is what makes the reply parseable at all. Every
         # other contract opens with it; leaving it off produced a Meta agent
@@ -257,6 +264,35 @@ def meta_adapter_contract() -> str:
         "model, the safety gates and the evaluator are outside this surface and a key "
         "naming any of them is discarded. Propose the next run's crew, not this run's "
         "actions."
+    )
+
+
+def describe_current(state: Dict[str, Any]) -> str:
+    """The configuration the Meta agent is being asked to revise.
+
+    Without this the agent proposes absolute values for settings it cannot see.
+    The 2026-08-22 pilot ran four generations that way and oscillated —
+    150 -> 50 -> 150 -> 50 on the discourse window — with a fluent justification
+    written for each direction. That is not adaptation; it is a prior being
+    resampled. A self-modifying loop has to be able to observe the variable it
+    is modifying.
+    """
+    lenses = state.get("archetypes") or []
+    if lenses:
+        counts: Dict[str, int] = {}
+        for lens in lenses:
+            counts[lens] = counts.get(lens, 0) + 1
+        composition = ", ".join(f"{lens} x{n}" for lens, n in sorted(counts.items()))
+    else:
+        composition = "homogeneous (no lenses)"
+    return (
+        "### The crew that produced this run\n"
+        f"team_count={state.get('team_count')}, "
+        f"discourse_window={state.get('discourse_window')}, "
+        f"memory_limit={state.get('memory_limit')}\n"
+        f"lens composition: {composition}\n"
+        "(These are the current values of the fields you may write. Propose absolute "
+        "values, and say nothing about a field you would leave as it is.)"
     )
 
 

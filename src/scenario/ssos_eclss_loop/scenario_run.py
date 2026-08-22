@@ -443,6 +443,11 @@ class SsosEclssLoopScenario(Scenario):
         if isinstance(team, SsosEclssLoopTeam) and team.mode in {"labeled_rule_base", "llm"}:
             summary["team_count"] = team.team_cfg.count
             summary["agent_ids"] = list(team.team_cfg.agent_ids)
+            # The two adapter fields the artifact never recorded. Without them a
+            # run cannot say what discourse and memory it actually ran with, and
+            # the Meta agent could not see what it was revising.
+            summary["discourse_window"] = team.adapter_state["discourse_window"]
+            summary["memory_limit"] = team.adapter_state["memory_limit"]
             # Composition is recorded in every mode so a run artifact says which
             # configuration produced it (parity with scrubber_degradation).
             summary["archetypes"] = {
