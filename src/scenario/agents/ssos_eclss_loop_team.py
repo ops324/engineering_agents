@@ -39,6 +39,7 @@ from core.agents.adapter import (
     ADAPTER_SCHEMA_VERSION,
     META_ADAPTER_PERSONA,
     describe_current,
+    describe_lineage,
     meta_adapter_contract,
     partition_proposal,
 )
@@ -144,6 +145,10 @@ class SsosEclssLoopTeam(Team):
         # Deterministic pairing rather than self-selected: who reviews whom is
         # then a property of the design, not of the run.
         self.critique_enabled = bool((config.get("critique") or {}).get("enabled", False))
+        # F4. What the archive handed forward: the parent design and other
+        # cells' elites, each with the outcome it got. Empty unless a chain
+        # supplies it, so a lone run behaves exactly as before.
+        self.lineage: Dict[str, Any] = config.get("lineage") or {}
 
         self.max_actions_per_step = _resolve_max_actions_per_step(
             config.get("max_actions_per_step", 1),
@@ -267,6 +272,7 @@ class SsosEclssLoopTeam(Team):
             build_llm_post_run_situation(summary, self.memory_store.discourse.recent(), {})
             + "\n\n"
             + describe_current(self.adapter_state)
+            + ("\n\n" + describe_lineage(self.lineage) if self.lineage else "")
         )
         ctx = self.meta_agent.build_context(
             step=int(summary.get("steps", 0)),

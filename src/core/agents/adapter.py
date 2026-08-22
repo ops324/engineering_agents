@@ -296,6 +296,56 @@ def describe_current(state: Dict[str, Any]) -> str:
     )
 
 
+def describe_lineage(lineage: Any) -> str:
+    """What earlier designs were, and what they achieved (design.md §5).
+
+    The 2026-08-23 pilot closed the loop on the *current* configuration and
+    still did not improve across four generations: every generation diagnosed
+    the herding correctly and prescribed another variation on adding lenses,
+    because nothing told it that the last variation had not worked. Seeing the
+    settings you are editing is not the same as seeing what settings produced.
+
+    ``inspirations`` are elites of other cells rather than the runners-up of
+    this one — AlphaEvolve's term, and the reason the archive is not a
+    leaderboard. Taking the best overall as the parent every time collapses the
+    search onto one lineage.
+    """
+    if not isinstance(lineage, dict):
+        return ""
+    parent = lineage.get("parent")
+    others = lineage.get("inspirations") or []
+    if not parent and not others:
+        return ""
+
+    def line(entry: Dict[str, Any]) -> str:
+        f = entry.get("fields") or {}
+        outcome = entry.get("outcome") or {}
+        verdict = (
+            "no emergency" if outcome.get("success")
+            else f"in emergency {outcome.get('critical_frac')} of the run"
+        )
+        lenses = f.get("archetypes") or []
+        composition = ", ".join(sorted(set(lenses))) if lenses else "homogeneous"
+        return (
+            f"- team_count={f.get('team_count')}, discourse_window={f.get('discourse_window')}, "
+            f"memory_limit={f.get('memory_limit')}, lenses: {composition}"
+            f"{', named critique' if entry.get('critique_stage') else ''} -> {verdict}"
+        )
+
+    out = ["### Designs already tried, and what they produced"]
+    if parent:
+        out.append("The design this run came from:")
+        out.append(line(parent))
+    if others:
+        out.append("Designs from other regions of the space, for contrast:")
+        out.extend(line(e) for e in others)
+    out.append(
+        "Propose from this evidence. A change already tried and followed by no "
+        "improvement is not a change; say so and try a different direction."
+    )
+    return "\n".join(out)
+
+
 def partition_proposal(raw_fields: Any) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Split a proposed reply into what is writable and what is not.
 
