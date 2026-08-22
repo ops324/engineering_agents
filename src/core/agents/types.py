@@ -10,6 +10,10 @@ from environment.protocol import HealthMetrics, RecoveryCommand, TelemetrySnapsh
 
 class DeliberationPhase:
     DELIBERATION = "deliberation"
+    # F5. Named critique, between the independent round and the action that
+    # integrates it. Its own phase so the artifact can tell a critique from a
+    # comment without parsing text.
+    CRITIQUE = "critique"
     ACTION = "action"
     POST_RUN = "post_run_proposal"
 

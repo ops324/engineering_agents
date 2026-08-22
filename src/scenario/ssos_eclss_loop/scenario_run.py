@@ -446,6 +446,7 @@ class SsosEclssLoopScenario(Scenario):
             # The two adapter fields the artifact never recorded. Without them a
             # run cannot say what discourse and memory it actually ran with, and
             # the Meta agent could not see what it was revising.
+            summary["critique_stage"] = bool(getattr(team, "critique_enabled", False))
             summary["discourse_window"] = team.adapter_state["discourse_window"]
             summary["memory_limit"] = team.adapter_state["memory_limit"]
             # Composition is recorded in every mode so a run artifact says which

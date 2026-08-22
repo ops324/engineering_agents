@@ -326,6 +326,23 @@ def eclss_design_proposal_contract() -> str:
     )
 
 
+def critique_contract(target_role: str) -> str:
+    """F5's middle round: one named colleague's reasoning, not the situation.
+
+    Named rather than open so the round is a critique and not a second comment.
+    An agent asked to "discuss" repeats itself; an agent asked what is wrong
+    with a specific claim has to read it.
+    """
+    return (
+        f"{json_envelope_preamble()}"
+        'Required keys: "message". '
+        f"{output_word_limits_clause()} "
+        f"You are reviewing {target_role}'s reasoning for this step, not the telemetry. "
+        "Name the specific assumption, omission or risk you disagree with, or say plainly "
+        "that it holds and why. Do not restate your own plan and do not issue commands."
+    )
+
+
 def design_action_contract() -> str:
     """Deprecated alias — runtime design actions are no longer applied."""
     return design_proposal_contract()

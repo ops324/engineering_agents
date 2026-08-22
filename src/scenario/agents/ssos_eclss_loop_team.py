@@ -17,6 +17,7 @@ from core.agents.persona import (
     build_design_personas,
     build_personas,
     eclss_design_proposal_contract,
+    critique_contract,
     eclss_operational_action_contract,
     load_design_team,
     load_team,
@@ -136,6 +137,14 @@ class SsosEclssLoopTeam(Team):
             )
             for agent_id, persona in self.personas.items()
         }
+        # F5. Absent by default, which is the registered baseline level. When on,
+        # each operator is named to review exactly one colleague's reasoning
+        # (i -> i+1 round robin, so everyone critiques once and is critiqued
+        # once) and the action round sees the critiques as well as the comments.
+        # Deterministic pairing rather than self-selected: who reviews whom is
+        # then a property of the design, not of the run.
+        self.critique_enabled = bool((config.get("critique") or {}).get("enabled", False))
+
         self.max_actions_per_step = _resolve_max_actions_per_step(
             config.get("max_actions_per_step", 1),
             team_count=self.team_cfg.count,
@@ -508,6 +517,9 @@ class SsosEclssLoopTeam(Team):
                     )
                 )
 
+        if self.critique_enabled and len(step_discourse) > 1:
+            step_discourse.extend(self._llm_critique_round(obs, situation, step_discourse, outcome))
+
         reps = self._action_rep_ids(obs.step)
         action_turns = run_parallel(
             [
@@ -526,6 +538,55 @@ class SsosEclssLoopTeam(Team):
             outcome.messages.extend(action_msgs)
             outcome.commands.extend(action_cmds)
         return outcome
+
+    def _llm_critique_round(
+        self,
+        obs: EclssLoopObservation,
+        situation: str,
+        step_discourse: List[AgentMessage],
+        outcome: StepEclssOutcome,
+    ) -> List[AgentMessage]:
+        """Each commenter reviews the next one's comment. F5's middle stage."""
+        commenters = [m.from_role for m in step_discourse]
+        pairs = [
+            (critic, commenters[(index + 1) % len(commenters)])
+            for index, critic in enumerate(commenters)
+        ]
+        turns = run_parallel(
+            [
+                self._llm_deliberation_turn(
+                    obs=obs,
+                    agent_id=critic,
+                    to_role=target,
+                    message_type="critique",
+                    phase=DeliberationPhase.CRITIQUE,
+                    situation=situation,
+                    # Only the round under review, so a critic reads the claim
+                    # rather than the whole step.
+                    step_discourse=[m for m in step_discourse if m.from_role == target],
+                    team_discourse=[],
+                    contract=critique_contract(target),
+                    required=("message",),
+                )
+                for critic, target in pairs
+            ]
+        )
+        written: List[AgentMessage] = []
+        for (critic, _target), msg in zip(pairs, turns):
+            if msg is None:
+                outcome.messages.append(
+                    self._llm_skip(
+                        obs=obs,
+                        agent_id=critic,
+                        phase=DeliberationPhase.CRITIQUE,
+                        reason="parse_failed_or_empty_message",
+                        decision_source="llm_parse_fail",
+                    )
+                )
+                continue
+            outcome.messages.append(msg)
+            written.append(msg)
+        return written
 
     def _run_step_labeled(self, obs: EclssLoopObservation) -> StepEclssOutcome:
         outcome = StepEclssOutcome()
