@@ -58,6 +58,16 @@ def run(
         "--apply-proposals",
         help="Apply design_proposals.json before running (ssos_eclss_loop).",
     ),
+    adapter: Optional[Path] = typer.Option(
+        None,
+        "--adapter",
+        help=(
+            "Apply an adapter.json before running (ssos_eclss_loop). This is the "
+            "self-modification surface of design.md 4: team size, archetype "
+            "allocation, discourse window and memory. Thresholds, the gates and "
+            "the evaluator are not reachable from it."
+        ),
+    ),
     llm_provider: Optional[str] = typer.Option(
         None,
         "--llm-provider",
@@ -138,6 +148,7 @@ def run(
         recreate_output=not no_recreate,
         seed=seed,
         apply_proposals_path=apply_proposals,
+        adapter_path=adapter,
     )
 
     if write_spec is not None:
@@ -157,6 +168,8 @@ def run(
         extra_lines["backend"] = backend
     if apply_proposals:
         extra_lines["apply_proposals"] = str(apply_proposals)
+    if adapter:
+        extra_lines["adapter"] = str(adapter)
     if inject_failures is not None:
         extra_lines["inject_failures"] = str(inject_failures).lower()
     if llm_provider:

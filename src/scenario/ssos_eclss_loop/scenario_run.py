@@ -36,6 +36,7 @@ from scenario.ssos_eclss_loop.health import (
     health_inputs_note,
 )
 from scenario.ssos_eclss_loop.loop_mock_backend import LoopMockEclssBackend
+from core.agents.adapter import adapter_provenance, apply_adapter, load_adapter
 from scenario.ssos_eclss_loop.design_proposals import (
     apply_design_proposals,
     load_design_proposals,
@@ -201,6 +202,7 @@ class SsosEclssLoopScenario(Scenario):
         overrides: Optional[Dict[str, Any]] = None,
         recreate_output: bool = True,
         apply_proposals_path: Optional[Path] = None,
+        adapter_path: Optional[Path] = None,
         run_id: Optional[str] = None,
         results_root: Optional[Path] = None,
     ) -> Path:
@@ -208,6 +210,10 @@ class SsosEclssLoopScenario(Scenario):
         # 1) scenario.yaml (+ CLI overrides)
         # 2) --apply-proposals merges into in-memory config (disk YAML unchanged)
         # 3) agents.yaml ⊕ scenario.agents, then labeled policy from thresholds
+        # 4) --adapter writes the self-modification surface (design.md 4). It
+        #    lands after the agents config exists and can only reach the fields
+        #    in core.agents.adapter; thresholds, gates and the evaluator are not
+        #    among them, so F7 cannot loosen what judges it.
         config = self.load_config(overrides)
         applied_proposals_path: Optional[Path] = None
         if apply_proposals_path is not None:
@@ -218,6 +224,11 @@ class SsosEclssLoopScenario(Scenario):
         agents_config = load_agents_config(self.name, config)
         if agents_config:
             agents_config = merge_labeled_policy_from_thresholds(agents_config, thresholds)
+        adapter_update: Dict[str, Any] = {}
+        if adapter_path is not None:
+            adapter_update = load_adapter(Path(adapter_path))
+            if agents_config:
+                agents_config = apply_adapter(agents_config, adapter_update)
         sim_cfg = config.get("simulation", {})
         steps = int(sim_cfg.get("steps", 8))
         # The seed has to reach the sampler, not just the summary. Recording a
@@ -417,6 +428,12 @@ class SsosEclssLoopScenario(Scenario):
                     "seed": llm_cfg.get("seed"),
                 }
             )
+
+        # Recorded in every run, self-modifying or not, so "F7 was absent" is a
+        # value in the artifact rather than a missing key.
+        summary["adapter"] = adapter_provenance(adapter_update)
+        if adapter_path is not None:
+            summary["adapter"]["source_path"] = str(adapter_path)
 
         if isinstance(team, SsosEclssLoopTeam) and team.mode in {"labeled_rule_base", "llm"}:
             summary["team_count"] = team.team_cfg.count

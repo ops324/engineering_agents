@@ -20,10 +20,12 @@ class RunSpec:
     recreate_output: bool = True
     seed: Optional[int] = None
     apply_proposals_path: Optional[Path] = None
+    # The self-modification surface (design.md 4). None means F7=absent.
+    adapter_path: Optional[Path] = None
 
     def to_dict(self) -> Dict[str, Any]:
         payload = asdict(self)
-        for key in ("output_dir", "results_root", "apply_proposals_path"):
+        for key in ("output_dir", "results_root", "apply_proposals_path", "adapter_path"):
             value = payload.get(key)
             if value is not None:
                 payload[key] = str(value)
@@ -32,7 +34,7 @@ class RunSpec:
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "RunSpec":
         data = dict(payload)
-        for key in ("output_dir", "results_root", "apply_proposals_path"):
+        for key in ("output_dir", "results_root", "apply_proposals_path", "adapter_path"):
             if data.get(key) is not None:
                 data[key] = Path(data[key])
         return cls(**data)
