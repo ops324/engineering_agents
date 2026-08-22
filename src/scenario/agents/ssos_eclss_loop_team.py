@@ -104,6 +104,18 @@ class SsosEclssLoopTeam(Team):
         self.state = EclssLoopTeamState()
         self.llm_mode = self.mode == "llm"
         self.llm_client = self._build_llm_client(config.get("llm", {})) if self.llm_mode else None
+        # F6. The post-run roles (design proposers, Meta agent) may be served by
+        # a different model from the crew — that mixed allocation is a level of
+        # the registered factor, and until now one client served everyone, so
+        # the level could not be built even with both models resident.
+        # `design_llm` overlays the crew's llm block, so a config naming only a
+        # model keeps the same endpoint and sampling.
+        self.design_llm_client = self.llm_client
+        design_llm_cfg = config.get("design_llm") or {}
+        if self.llm_mode and design_llm_cfg:
+            self.design_llm_client = build_llm_client(
+                {**(config.get("llm") or {}), **design_llm_cfg}, prefer_config=True
+            )
 
         self.team_cfg: TeamConfig = load_team(config)
         self.personas = build_personas(self.team_cfg)
@@ -144,7 +156,7 @@ class SsosEclssLoopTeam(Team):
                 agent_id: PersonaAgent(
                     persona=persona,
                     memory=self.design_memory_store.agent_memories[agent_id],
-                    llm_client=self.llm_client,
+                    llm_client=self.design_llm_client,
                 )
                 for agent_id, persona in design_personas.items()
             }
@@ -177,8 +189,60 @@ class SsosEclssLoopTeam(Team):
             self.meta_agent = PersonaAgent(
                 persona=Persona(agent_id=self.meta_agent_id, persona=META_ADAPTER_PERSONA),
                 memory=meta_memory.agent_memories[self.meta_agent_id],
-                llm_client=self.llm_client,
+                llm_client=self.design_llm_client,
             )
+
+    def llm_usage(self) -> Dict[str, int]:
+        """Spend across every client this team used.
+
+        With one client the caller could read it directly. With two, reading
+        one of them under-reports the budget — and decision 23 settles the
+        contest in tokens, so an unaccounted client is an unaccounted arm.
+        """
+        clients = []
+        for client in (self.llm_client, self.design_llm_client):
+            if client is not None and not any(client is seen for seen in clients):
+                clients.append(client)
+        total: Dict[str, int] = {}
+        for client in clients:
+            # A client without accounting (test doubles, and any backend added
+            # later) is skipped rather than crashing the run it was measuring.
+            usage_of = getattr(client, "usage", None)
+            if not callable(usage_of):
+                continue
+            for key, value in usage_of().items():
+                total[key] = total.get(key, 0) + int(value)
+        return total
+
+    def llm_usage_by_role(self) -> Dict[str, Any]:
+        """Spend per client, so "the big model was configured" and "the big
+        model answered" stay distinguishable. A split that routes no call is
+        a level that was declared and not built."""
+        out: Dict[str, Any] = {}
+        for role, client in (("crew", self.llm_client), ("post_run", self.design_llm_client)):
+            usage_of = getattr(client, "usage", None)
+            if callable(usage_of):
+                out[role] = usage_of()
+        if self.design_llm_client is self.llm_client:
+            out.pop("post_run", None)
+        return out
+
+    def llm_roles(self) -> Dict[str, Any]:
+        """Which model answered for which role. Never part of a score."""
+        def model_of(client):
+            return getattr(client, "model", None)
+        return {
+            "crew": model_of(self.llm_client),
+            "post_run": model_of(self.design_llm_client),
+            # A difference in what was asked of the backend, not in object
+            # identity: two clients resolving to one model is not a split, and
+            # reporting it as one is how an unbuilt level looks built.
+            "split": (
+                model_of(self.llm_client) != model_of(self.design_llm_client)
+                or getattr(self.llm_client, "base_url", None)
+                != getattr(self.design_llm_client, "base_url", None)
+            ),
+        }
 
     def propose_adapter_update(self, summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """One typed candidate for the next run's crew, or None when F7 is absent.
@@ -820,7 +884,20 @@ class SsosEclssLoopTeam(Team):
             baseline_graph,
         )
         contract = eclss_design_proposal_contract()
+        # The proposer role, not the operator, decides which model answers here
+        # (F6). With design_proposer_kind=operator_rep the proposal is issued by
+        # a crew member, and reusing that agent object would send the whole run
+        # through the proposer's model. A shadow over the same persona and the
+        # same memory keeps the run on the crew's model and this one call on the
+        # proposer's — otherwise the mixed allocation records a split while
+        # nothing crosses it.
         agent = self.agents[rep]
+        if self.design_llm_client is not self.llm_client:
+            agent = PersonaAgent(
+                persona=agent.persona,
+                memory=agent.memory,
+                llm_client=self.design_llm_client,
+            )
         ctx = agent.build_context(
             step=int(summary.get("steps", 0)),
             phase=DeliberationPhase.POST_RUN,

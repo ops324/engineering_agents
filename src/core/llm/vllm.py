@@ -98,9 +98,19 @@ def looks_like_ollama_url(url: str) -> bool:
     return ":11434" in lowered or "/api/" in lowered
 
 
-def resolve_vllm_base_url(llm_cfg: Optional[Dict[str, Any]] = None) -> str:
-    """Resolve vLLM URL: env VLLM_BASE_URL overrides yaml; Ollama URLs fall back to lab default."""
-    env_url = os.environ.get(VLLM_BASE_URL_ENV, "").strip()
+def resolve_vllm_base_url(
+    llm_cfg: Optional[Dict[str, Any]] = None, prefer_config: bool = False
+) -> str:
+    """Resolve vLLM URL: env VLLM_BASE_URL overrides yaml; Ollama URLs fall back to lab default.
+
+    ``prefer_config`` inverts that for one client. The environment variable is
+    a switch for the whole run — ``ea_gpu on`` always sets it — while a config
+    block naming an endpoint for one role is the more specific statement. With
+    the env winning unconditionally, F6's mixed allocation could not be
+    expressed at all: both clients silently resolved to the same model while
+    reporting a split.
+    """
+    env_url = "" if prefer_config else os.environ.get(VLLM_BASE_URL_ENV, "").strip()
     if env_url:
         return normalize_vllm_base_url(env_url)
     cfg_url = str((llm_cfg or {}).get("base_url", "")).strip()
@@ -109,9 +119,14 @@ def resolve_vllm_base_url(llm_cfg: Optional[Dict[str, Any]] = None) -> str:
     return normalize_vllm_base_url(cfg_url)
 
 
-def resolve_vllm_model(llm_cfg: Optional[Dict[str, Any]] = None) -> str:
-    """Use yaml/env model when it looks like a vLLM id; otherwise the lab 8B default."""
-    env_model = os.environ.get("VLLM_MODEL", "").strip()
+def resolve_vllm_model(
+    llm_cfg: Optional[Dict[str, Any]] = None, prefer_config: bool = False
+) -> str:
+    """Use yaml/env model when it looks like a vLLM id; otherwise the lab default.
+
+    See :func:`resolve_vllm_base_url` for why ``prefer_config`` exists.
+    """
+    env_model = "" if prefer_config else os.environ.get("VLLM_MODEL", "").strip()
     if env_model:
         return env_model
     cfg_model = str((llm_cfg or {}).get("model", "")).strip()

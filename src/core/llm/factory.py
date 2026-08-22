@@ -53,7 +53,9 @@ def describe_llm_target(llm_cfg: Optional[Dict[str, Any]] = None) -> Tuple[str, 
     return provider, resolve_llm_base_url(cfg), resolve_llm_model(cfg)
 
 
-def build_llm_client(llm_cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
+def build_llm_client(
+    llm_cfg: Optional[Dict[str, Any]] = None, prefer_config: bool = False
+) -> LLMClient:
     cfg = llm_cfg or {}
     provider = resolve_llm_provider(cfg)
     temperature = float(cfg.get("temperature", 0.45))
@@ -68,8 +70,8 @@ def build_llm_client(llm_cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
 
     if provider == "vllm":
         return VllmClient(
-            base_url=resolve_vllm_base_url(cfg),
-            model=resolve_vllm_model(cfg),
+            base_url=resolve_vllm_base_url(cfg, prefer_config=prefer_config),
+            model=resolve_vllm_model(cfg, prefer_config=prefer_config),
             temperature=temperature,
             max_tokens=max_tokens,
             repeat_penalty=repeat_penalty,

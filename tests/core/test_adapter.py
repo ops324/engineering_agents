@@ -278,3 +278,64 @@ def test_the_contract_explains_that_repeats_set_the_proportion():
     contract = meta_adapter_contract()
     assert "Repeating a name weights the allocation" in contract
     assert "seven and three" in contract
+
+
+# --- F6: which model answers for which role ------------------------------
+
+class _Client:
+    def __init__(self, model, calls, tokens):
+        self.model, self._c, self._t = model, calls, tokens
+
+    def usage(self):
+        return {"calls": self._c, "failed_calls": 0, "prompt_tokens": self._t,
+                "completion_tokens": 0, "total_tokens": self._t}
+
+
+class _Team:
+    """The two methods F6 turns on, lifted out of the scenario team."""
+    llm_usage = None  # bound below
+
+    def __init__(self, crew, post_run):
+        self.llm_client, self.design_llm_client = crew, post_run
+
+
+def _bind():
+    from scenario.agents.ssos_eclss_loop_team import SsosEclssLoopTeam
+    _Team.llm_usage = SsosEclssLoopTeam.llm_usage
+    _Team.llm_roles = SsosEclssLoopTeam.llm_roles
+
+
+def test_a_shared_client_is_counted_once():
+    """One model for everyone must not double its own spend."""
+    _bind()
+    client = _Client("qwen3.5-9b", 602, 1_500_000)
+    assert _Team(client, client).llm_usage()["calls"] == 602
+
+
+def test_a_split_allocation_sums_both_clients():
+    """The post-run model's spend is part of the budget. Reading only the
+    crew's client would under-report the arm that decision 23 settles in."""
+    _bind()
+    team = _Team(_Client("qwen3.5-9b", 600, 1_500_000), _Client("qwen3.8-27b", 2, 40_000))
+    usage = team.llm_usage()
+    assert usage["calls"] == 602
+    assert usage["total_tokens"] == 1_540_000
+
+
+def test_the_roles_say_which_model_answered_and_whether_it_was_split():
+    _bind()
+    same = _Client("qwen3.5-9b", 1, 1)
+    assert _Team(same, same).llm_roles() == {
+        "crew": "qwen3.5-9b", "post_run": "qwen3.5-9b", "split": False}
+    split = _Team(_Client("qwen3.5-9b", 1, 1), _Client("qwen3.8-27b", 1, 1))
+    assert split.llm_roles()["split"] is True
+    assert split.llm_roles()["post_run"] == "qwen3.8-27b"
+
+
+def test_a_client_without_accounting_is_skipped_not_fatal():
+    """Test doubles and future backends may not account. A run must not die
+    because the thing measuring it lacks a counter."""
+    _bind()
+    class Bare:
+        model = "fake"
+    assert _Team(Bare(), Bare()).llm_usage() == {}

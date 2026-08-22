@@ -472,9 +472,15 @@ class SsosEclssLoopScenario(Scenario):
             if actual_proposer_kind:
                 summary["design_proposer_kind"] = actual_proposer_kind
             # Counted after the proposal round so post-run design is included.
-            usage_of = getattr(getattr(team, "llm_client", None), "usage", None)
+            usage_of = getattr(team, "llm_usage", None)
             if callable(usage_of):
-                summary["llm_usage"] = usage_of()
+                usage = usage_of()
+                if usage:
+                    summary["llm_usage"] = usage
+                    summary["llm_roles"] = team.llm_roles()
+                    by_role = team.llm_usage_by_role()
+                    if len(by_role) > 1:
+                        summary["llm_usage_by_role"] = by_role
             # L8/B: only persist when there is at least one change so
             # --apply-proposals never no-ops from an empty document.
             change_count = len(proposals.get("changes") or [])
@@ -497,9 +503,11 @@ class SsosEclssLoopScenario(Scenario):
                 summary["adapter_proposal"] = proposal_provenance(adapter_proposal)
                 summary["adapter_proposal_path"] = str(proposal_path)
                 # Counted after the meta round so its calls are not lost.
-                usage_of = getattr(getattr(team, "llm_client", None), "usage", None)
+                usage_of = getattr(team, "llm_usage", None)
                 if callable(usage_of):
-                    summary["llm_usage"] = usage_of()
+                    usage = usage_of()
+                    if usage:
+                        summary["llm_usage"] = usage
 
         log.write_summary(summary)
 
