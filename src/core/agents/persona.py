@@ -385,7 +385,8 @@ def message_contract(*, hypotheses: bool = False) -> str:
     # the errors there.
     clause = (
         '"hypothesis" is a falsifiable claim the team keeps and scores against '
-        "measurement. Both condition and prediction are lists of the SAME kind of "
+        'measurement. It is ONE object, not a list of them — the lists are inside '
+        "it. Both condition and prediction are lists of the SAME kind of "
         "object — {\"metric\": name, \"op\": comparison, \"value\": value} — and a "
         "prediction says what a MEASUREMENT will read, never what anyone should do. "
         "A command name is not a prediction. Full shape: "

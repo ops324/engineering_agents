@@ -195,17 +195,37 @@ class HypothesisStore:
     scoring_events: List[Dict[str, Any]] = field(default_factory=list)
     _next_id: int = 1
 
+    def _refuse(self, raw: Any, reasons: List[str], *, step: int, agent_id: str) -> None:
+        """Record the offer and why it did not get in.
+
+        The raw offer goes in whatever its shape. An earlier version kept it
+        only for scalars, so the ninety-three refusals that mattered most were
+        written as `null` and the reason had to carry the whole diagnosis.
+        """
+        self.rejected.append(
+            {"step": step, "agent_id": agent_id, "reasons": reasons, "raw": raw}
+        )
+
     def propose(self, raw: Any, *, step: int, agent_id: str) -> Optional[Hypothesis]:
         """Take an agent's hypothesis, or record why it was not taken."""
+        # A one-element list is unwrapped. Replies put the hypothesis in a list
+        # because the two fields inside it are lists, and reading `[{...}]` as
+        # `{...}` changes nothing about the claim — it is the same single
+        # hypothesis, which is what one turn offers. Longer lists are refused
+        # rather than silently truncated: a turn offering three claims has not
+        # made the one claim the contract asks for, and picking one for it would
+        # be choosing on the agent's behalf. The raw offer is recorded either
+        # way, so the artifact still shows exactly what came back.
+        if isinstance(raw, list) and len(raw) == 1:
+            raw = raw[0]
         if not isinstance(raw, dict):
-            self.rejected.append(
-                {
-                    "step": step,
-                    "agent_id": agent_id,
-                    "reasons": [f"hypothesis must be an object, got {type(raw).__name__}"],
-                    "raw": raw if isinstance(raw, (str, int, float, bool)) else None,
-                }
+            detail = (
+                f"got a list of {len(raw)}; offer one hypothesis, not several"
+                if isinstance(raw, list)
+                else f"got {type(raw).__name__}"
             )
+            self._refuse(raw, [f"hypothesis must be an object, {detail}"],
+                         step=step, agent_id=agent_id)
             return None
         condition, condition_notes = _parse_side(raw.get("condition"), "condition")
         prediction, prediction_notes = _parse_side(raw.get("prediction"), "prediction")
@@ -220,9 +240,7 @@ class HypothesisStore:
                 f"horizon must be an integer {MIN_HORIZON}..{MAX_HORIZON}, got {horizon_raw!r}"
             )
         if notes:
-            self.rejected.append(
-                {"step": step, "agent_id": agent_id, "reasons": notes, "raw": raw}
-            )
+            self._refuse(raw, notes, step=step, agent_id=agent_id)
             return None
         # A hypothesis already in the ledger is not added twice; the ledger is
         # the team's, so two operators claiming the same thing is one claim with

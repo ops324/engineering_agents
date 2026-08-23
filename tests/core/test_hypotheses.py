@@ -191,3 +191,30 @@ def test_a_bare_string_prediction_is_refused_with_a_reason():
         step=0, agent_id="a",
     ) is None
     assert any("predicate must be an object" in r for r in store.rejected[0]["reasons"])
+
+
+def test_a_one_element_list_is_read_as_the_hypothesis_inside_it():
+    """What ninety-three of ninety-seven offers came back as."""
+    store = HypothesisStore()
+    got = store.propose(
+        [{"condition": [CO2_HIGH], "prediction": [O2_LOW], "horizon": 2}],
+        step=0, agent_id="a",
+    )
+    assert got is not None and store.rejected == []
+
+
+def test_a_longer_list_is_refused_rather_than_truncated():
+    """Picking one of three would be choosing on the agent's behalf."""
+    store = HypothesisStore()
+    one = {"condition": [CO2_HIGH], "prediction": [O2_LOW], "horizon": 2}
+    assert store.propose([one, one], step=0, agent_id="a") is None
+    assert store.hypotheses == []
+    assert "offer one hypothesis, not several" in store.rejected[0]["reasons"][0]
+
+
+def test_a_refused_offer_keeps_its_raw_shape_whatever_it_was():
+    store = HypothesisStore()
+    store.propose("not an object at all", step=0, agent_id="a")
+    store.propose([1, 2, 3], step=1, agent_id="b")
+    assert store.rejected[0]["raw"] == "not an object at all"
+    assert store.rejected[1]["raw"] == [1, 2, 3]
