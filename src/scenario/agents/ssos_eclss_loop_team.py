@@ -125,10 +125,16 @@ class SsosEclssLoopTeam(Team):
             config.get("policy", {}) if self.mode == "labeled_rule_base" else {}
         )
 
+        # F3. Absent by default, which is the registered baseline: a recency
+        # window and no policy at all.
+        self.memory_policy = str(
+            (config.get("memory") or {}).get("policy", "none")
+        ).strip().lower()
         self.memory_store = TeamMemoryStore(
             agent_ids=list(self.personas.keys()),
             memory_limit=int(config.get("memory_limit", 8)),
             discourse_window=int(config.get("discourse_window", 12)),
+            memory_policy=self.memory_policy,
         )
         self.agents: Dict[str, PersonaAgent] = {
             agent_id: PersonaAgent(

@@ -449,6 +449,9 @@ class SsosEclssLoopScenario(Scenario):
             summary["critique_stage"] = bool(getattr(team, "critique_enabled", False))
             summary["discourse_window"] = team.adapter_state["discourse_window"]
             summary["memory_limit"] = team.adapter_state["memory_limit"]
+            # F3. Recorded beside memory_limit because the level changes what
+            # that number means — kept, or merely shown.
+            summary["memory_policy"] = team.memory_policy
             # Composition is recorded in every mode so a run artifact says which
             # configuration produced it (parity with scrubber_degradation).
             summary["archetypes"] = {

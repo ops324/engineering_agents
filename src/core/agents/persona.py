@@ -523,7 +523,9 @@ class PersonaAgent:
             situation=situation,
             step_discourse=step_discourse,
             team_discourse=team_discourse,
-            agent_memory=self.memory.recent(),
+            # F3. `retrieve` is the recency window when no policy is set, so
+            # the baseline is byte-identical to what this was.
+            agent_memory=self.memory.retrieve(situation),
         )
 
     def deliberate(
