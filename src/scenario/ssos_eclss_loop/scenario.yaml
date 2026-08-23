@@ -6,9 +6,23 @@ description: >
 
 simulation:
   steps: 50  # decision cycles (observe → deliberate → act)
-  # Baseline 4-crew inventories. CO2 start sits just below the high band.
+  # Starting inventories are experimental condition v2 (decision 98, 2026-08-24).
+  #
+  # They are the fourth tier of decision 89: only a human changes them, the
+  # change needs pre-registration, and it carries a version. Do not tune them
+  # to make results look better -- that puts the experimenter inside the
+  # self-improvement loop the experiment is trying to observe (decision 90).
+  #
+  # v1 (0.48 kg O2) put all 27 conditions on the floor: 4.9% passed and the
+  # spread between conditions was 6.3 points, so no design change could show.
+  # v2 raises O2 alone; CO2 and water are unchanged because CO2 cannot be
+  # fixed by any starting value (crew generation alone crosses critical) and
+  # water already clears with room to spare in 98.8% of runs.
+  #
+  # Registered prediction: 37.9% pass. Runs made under v2 are a new
+  # generation -- do not table them beside the 346 v1 runs (decision 100).
   initial_co2_storage_kg: 1.3
-  initial_o2_storage_kg: 0.48
+  initial_o2_storage_kg: 2.98   # v1 was 0.48
   initial_product_water_l: 51.0
 
 backend:
