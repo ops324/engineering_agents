@@ -91,6 +91,55 @@ DESIGN_SUBSYSTEM_LENSES: Dict[str, str] = {
 }
 
 
+# Operational subsystem responsibilities — F1's third registered level.
+#
+# Three-way distinction, and the two existing tables are why it has to be its
+# own one. ARCHETYPE_LENSES are ways of *thinking* an operator applies to the
+# whole station; DESIGN_SUBSYSTEM_LENSES answer for a subsystem *after the run
+# is over* ("the simulation is over; you are reviewing what happened") and so
+# cannot be handed to an operator who still has to act. These name which
+# subsystem an operator answers for *while the run is going*.
+#
+# Six, matching the registered level. `thermal_humidity` is the one the backend
+# cannot actuate — it is listed because the level says six and the deck names
+# six, and its operator can read telemetry and argue but has no command of its
+# own to issue. That asymmetry is real, not an oversight; a run that uses it
+# must say so. See the 2026-08-23 addendum in preregistered_human_hypotheses.md.
+OPERATIONAL_SUBSYSTEM_LENSES: Dict[str, str] = {
+    "air_revitalisation": (
+        "Subsystem responsibility — Air revitalisation (ARS): you answer for CO2 removal "
+        "while the run is going. Watch CO2 partial pressure and removal capacity, and say "
+        "what the ARS should be asked to do next."
+    ),
+    "oxygen_generation": (
+        "Subsystem responsibility — Oxygen generation (OGS): you answer for O2 production "
+        "and the water it consumes. O2 margin bought with water is charged to water "
+        "recovery — say when you are the one spending it."
+    ),
+    "water_recovery": (
+        "Subsystem responsibility — Water recovery (WRS): you answer for reclaim throughput "
+        "and reserve margin. You are downstream of everyone; say so when another "
+        "subsystem's course of action would drain you."
+    ),
+    "fault_detection": (
+        "Subsystem responsibility — Fault detection: you answer for seeing trouble early. "
+        "Watch for signals that have not yet become an alarm and name the ones the rest of "
+        "the team has not reacted to."
+    ),
+    "systems_integration": (
+        "Subsystem responsibility — Systems integration: you own no subsystem. Judge "
+        "whether the team's separate intentions are consistent with each other and with "
+        "the resource budget, and name the conflicts nobody else will."
+    ),
+    "thermal_humidity": (
+        "Subsystem responsibility — Thermal and humidity control: you answer for cabin "
+        "temperature and moisture. You have no actuator of your own in this station build, "
+        "so your contribution is what you observe and what you tell the others — say when "
+        "another subsystem's course of action would load you."
+    ),
+}
+
+
 @dataclass(frozen=True)
 class TeamConfig:
     count: int
@@ -99,6 +148,10 @@ class TeamConfig:
     agent_ids: Tuple[str, ...]
     # (agent_id, lens_name) pairs. Empty tuple => homogeneous team (backward compatible).
     archetypes: Tuple[Tuple[str, str], ...] = ()
+    # (agent_id, subsystem_name) pairs. F1's third level, and mutually exclusive
+    # with archetypes: the three are levels of one factor, so a config that sets
+    # both is asking for two levels at once rather than for a combination.
+    subsystems: Tuple[Tuple[str, str], ...] = ()
 
     def action_rep_index(self, step: int) -> int:
         return (step - 1) % self.count
@@ -107,28 +160,48 @@ class TeamConfig:
         return self.agent_ids[self.action_rep_index(step)]
 
 
-def _resolve_archetypes(
-    raw: Any, agent_ids: Tuple[str, ...]
+def _resolve_lenses(
+    raw: Any,
+    agent_ids: Tuple[str, ...],
+    known: Dict[str, str],
+    field: str,
+    label: str,
 ) -> Tuple[Tuple[str, str], ...]:
     """Map a list of lens names onto agent_ids (round-robin). Empty/missing => ()."""
     if not raw:
         return ()
     if not isinstance(raw, (list, tuple)):
         raise ValueError(
-            f"team.archetypes must be a list of lens names, got {type(raw).__name__}"
+            f"team.{field} must be a list of lens names, got {type(raw).__name__}"
         )
     lens_names = [str(name).strip() for name in raw if str(name).strip()]
     if not lens_names:
         return ()
-    unknown = [name for name in lens_names if name not in ARCHETYPE_LENSES]
+    unknown = [name for name in lens_names if name not in known]
     if unknown:
         raise ValueError(
-            f"Unknown archetype lens(es): {unknown}. "
-            f"Known lenses: {sorted(ARCHETYPE_LENSES)}"
+            f"Unknown {label}: {unknown}. Known: {sorted(known)}"
         )
     return tuple(
         (agent_id, lens_names[i % len(lens_names)])
         for i, agent_id in enumerate(agent_ids)
+    )
+
+
+def _resolve_archetypes(
+    raw: Any, agent_ids: Tuple[str, ...]
+) -> Tuple[Tuple[str, str], ...]:
+    return _resolve_lenses(
+        raw, agent_ids, ARCHETYPE_LENSES, "archetypes", "archetype lens(es)"
+    )
+
+
+def _resolve_subsystems(
+    raw: Any, agent_ids: Tuple[str, ...]
+) -> Tuple[Tuple[str, str], ...]:
+    return _resolve_lenses(
+        raw, agent_ids, OPERATIONAL_SUBSYSTEM_LENSES, "subsystems",
+        "operational subsystem(s)",
     )
 
 
@@ -139,12 +212,23 @@ def load_team(config: Dict[str, Any]) -> TeamConfig:
     persona_text = str(team_raw.get("persona") or DEFAULT_TEAM_PERSONA).strip()
     agent_ids = tuple(f"{id_prefix}_{i}" for i in range(1, count + 1))
     archetypes = _resolve_archetypes(team_raw.get("archetypes"), agent_ids)
+    subsystems = _resolve_subsystems(team_raw.get("subsystems"), agent_ids)
+    if archetypes and subsystems:
+        # Refused rather than merged. F1's three levels — homogeneous, thinking
+        # styles, subsystem specialisms — are alternatives, so a config naming
+        # both has asked for two levels of one factor and the run would not be
+        # at any registered point of the design space.
+        raise ValueError(
+            "team.archetypes and team.subsystems are levels of the same factor (F1); "
+            "set one or neither, not both"
+        )
     return TeamConfig(
         count=count,
         id_prefix=id_prefix,
         shared_persona=persona_text,
         agent_ids=agent_ids,
         archetypes=archetypes,
+        subsystems=subsystems,
     )
 
 
@@ -211,17 +295,21 @@ def build_design_personas(design_team: DesignTeamConfig) -> Dict[str, Persona]:
 
 def build_personas(team: TeamConfig) -> Dict[str, Persona]:
     # Homogeneous fallback: identical to pre-archetype behaviour.
-    if not team.archetypes:
+    if not team.archetypes and not team.subsystems:
         return {
             agent_id: Persona(agent_id=agent_id, persona=team.shared_persona)
             for agent_id in team.agent_ids
         }
-    lens_by_agent = dict(team.archetypes)
+    # load_team has already refused the case where both are set.
+    if team.subsystems:
+        lens_by_agent, texts = dict(team.subsystems), OPERATIONAL_SUBSYSTEM_LENSES
+    else:
+        lens_by_agent, texts = dict(team.archetypes), ARCHETYPE_LENSES
     personas: Dict[str, Persona] = {}
     for agent_id in team.agent_ids:
         lens_name = lens_by_agent.get(agent_id)
         if lens_name:
-            persona_text = f"{ARCHETYPE_LENSES[lens_name]}\n\n{team.shared_persona}"
+            persona_text = f"{texts[lens_name]}\n\n{team.shared_persona}"
         else:
             persona_text = team.shared_persona
         personas[agent_id] = Persona(agent_id=agent_id, persona=persona_text)

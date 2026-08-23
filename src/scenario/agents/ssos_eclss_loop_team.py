@@ -188,6 +188,7 @@ class SsosEclssLoopTeam(Team):
             "discourse_window": int(config.get("discourse_window", 12)),
             "memory_limit": int(config.get("memory_limit", 8)),
             "archetypes": [lens for _, lens in self.team_cfg.archetypes],
+            "subsystems": [name for _, name in self.team_cfg.subsystems],
         }
 
         self.meta_agent_id: Optional[str] = None

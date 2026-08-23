@@ -98,3 +98,69 @@ def test_archetypes_can_be_disabled_via_override(tmp_path: Path):
         recreate_output=True,
     )
     assert _read_summary(run_dir)["archetypes"] == {}
+
+
+# --- F1 level three: operational subsystem specialisms -----------------------
+
+
+def test_subsystems_are_dealt_round_robin_and_reach_the_persona():
+    team = load_team(
+        {
+            "team": {
+                "count": 6,
+                "id_prefix": "eclss_operator",
+                "subsystems": [
+                    "air_revitalisation",
+                    "oxygen_generation",
+                    "water_recovery",
+                    "fault_detection",
+                    "systems_integration",
+                    "thermal_humidity",
+                ],
+            }
+        }
+    )
+    assert [name for _, name in team.subsystems] == [
+        "air_revitalisation",
+        "oxygen_generation",
+        "water_recovery",
+        "fault_detection",
+        "systems_integration",
+        "thermal_humidity",
+    ]
+    personas = build_personas(team)
+    assert len({p.persona for p in personas.values()}) == 6
+    assert "Water recovery" in personas["eclss_operator_3"].persona
+
+
+def test_subsystem_level_does_not_borrow_the_post_run_review_wording():
+    """The design lenses read 'the simulation is over'; an operator's must not."""
+    team = load_team({"team": {"count": 2, "subsystems": ["air_revitalisation"]}})
+    for persona in build_personas(team).values():
+        assert "simulation is over" not in persona.persona
+        assert "while the run is going" in persona.persona
+
+
+def test_unknown_subsystem_name_raises():
+    with pytest.raises(ValueError, match="Unknown operational subsystem"):
+        load_team({"team": {"count": 2, "subsystems": ["water_recovery", "bogus"]}})
+
+
+def test_setting_both_f1_levels_is_refused():
+    """They are levels of one factor, so a config naming both is at no design point."""
+    with pytest.raises(ValueError, match="levels of the same factor"):
+        load_team(
+            {
+                "team": {
+                    "count": 2,
+                    "archetypes": ["first_principles"],
+                    "subsystems": ["water_recovery"],
+                }
+            }
+        )
+
+
+def test_empty_subsystems_list_falls_back_to_homogeneous():
+    team = load_team({"team": {"count": 3, "subsystems": []}})
+    assert team.subsystems == ()
+    assert len({p.persona for p in build_personas(team).values()}) == 1

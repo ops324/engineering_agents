@@ -454,6 +454,13 @@ class SsosEclssLoopScenario(Scenario):
             summary["archetypes"] = {
                 aid: lens for aid, lens in team.team_cfg.archetypes
             }
+            # F1's third level. Recorded separately from archetypes because the
+            # two are alternatives: a run that reports neither is homogeneous,
+            # and one that reported only archetypes could not say which of the
+            # other two levels it was.
+            summary["subsystems"] = {
+                aid: name for aid, name in team.team_cfg.subsystems
+            }
             if team.design_team_cfg is not None:
                 summary["design_team"] = {
                     aid: subsystem for aid, subsystem in team.design_team_cfg.subsystems

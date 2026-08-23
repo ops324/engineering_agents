@@ -183,6 +183,15 @@ def apply_adapter(agents_config: Dict[str, Any], update: Any) -> Dict[str, Any]:
                 target[key] = nxt
             target = nxt
         target[spec.path[-1]] = value
+    # F1's levels are alternatives (persona.load_team refuses a config holding
+    # both). A crew running the subsystem level plus an adapter that writes
+    # archetypes would be that config, and the refusal would land mid-chain as a
+    # crash rather than as a rejected proposal. Writing lenses moves the crew off
+    # the subsystem level explicitly, which is what naming lenses means.
+    if (update.get("fields") or {}).get("archetypes"):
+        team = merged.get("team")
+        if isinstance(team, dict) and team.get("subsystems"):
+            team["subsystems"] = []
     return merged
 
 
@@ -277,12 +286,26 @@ def describe_current(state: Dict[str, Any]) -> str:
     resampled. A self-modifying loop has to be able to observe the variable it
     is modifying.
     """
-    lenses = state.get("archetypes") or []
-    if lenses:
+    def _counts(names: Any) -> str:
         counts: Dict[str, int] = {}
-        for lens in lenses:
-            counts[lens] = counts.get(lens, 0) + 1
-        composition = ", ".join(f"{lens} x{n}" for lens, n in sorted(counts.items()))
+        for name in names:
+            counts[name] = counts.get(name, 0) + 1
+        return ", ".join(f"{name} x{n}" for name, n in sorted(counts.items()))
+
+    # A crew specialised by subsystem is F1's third level. Reporting it as
+    # "homogeneous (no lenses)" — which is what reading only `archetypes` does —
+    # is the same defect this function exists to fix, one level along: the agent
+    # would be revising a crew it had been described wrongly.
+    subsystems = state.get("subsystems") or []
+    lenses = state.get("archetypes") or []
+    if subsystems:
+        composition = (
+            f"specialised by subsystem: {_counts(subsystems)}\n"
+            "(The subsystem assignment is fixed for this run and is not one of the fields "
+            "you may write. Naming thinking lenses replaces it with a lens-based crew.)"
+        )
+    elif lenses:
+        composition = _counts(lenses)
     else:
         composition = "homogeneous (no lenses)"
     return (
