@@ -347,45 +347,57 @@ def output_word_limits_clause() -> str:
 def message_contract(*, hypotheses: bool = False) -> str:
     """The deliberation reply contract.
 
-    `hypotheses` adds F3's hypothesis-memory level. The clause is generated from
+    The baseline branch is the original expression, character for character, and
+    is returned before anything else is considered. That is deliberate: an
+    optional level must not move the baseline's prompt by a byte, and the first
+    attempt at this function did — it rebuilt the shared text and turned
+    "Optional key:" into "Optional key(s):" for every run, including runs of a
+    factor that was switched off. Four runs of a live batch went out under the
+    changed wording before the summaries showed it.
+
+    `hypotheses` adds F3's hypothesis-memory level. Its clause is generated from
     the schema in core/agents/hypotheses.py rather than written out here, so the
     metrics an agent is told about cannot drift from the metrics the scorer will
     accept — an agent offering a hypothesis about a metric that is silently
     rejected is an agent whose memory never learns anything.
     """
-    optional = '"memory"'
-    hypothesis_clause = ""
-    if hypotheses:
-        from core.agents.hypotheses import (
-            BOOLEAN_METRICS,
-            MAX_HORIZON,
-            MIN_HORIZON,
-            NUMERIC_METRICS,
-            STATUS_METRICS,
+    if not hypotheses:
+        return (
+            f"{json_envelope_preamble()}"
+            'Required keys: "message", "reasoning". '
+            'Optional key: "memory". '
+            f"{output_word_limits_clause()} "
+            'Example: {"message":"CO2 rising.","reasoning":"co2_ppm crossed threshold",'
+            '"memory":"Fan boost may be next."}'
         )
+    from core.agents.hypotheses import (
+        BOOLEAN_METRICS,
+        MAX_HORIZON,
+        MIN_HORIZON,
+        NUMERIC_METRICS,
+        STATUS_METRICS,
+    )
 
-        optional = '"memory", "hypothesis"'
-        hypothesis_clause = (
-            ' "hypothesis" is a falsifiable claim the team will keep and score against '
-            'measurement: {"condition":[{"metric":...,"op":...,"value":...}], '
-            '"prediction":[...], "horizon":N}. It says that when the condition holds, '
-            f"the prediction will hold within horizon steps ({MIN_HORIZON}..{MAX_HORIZON}). "
-            f"Numeric metrics {sorted(NUMERIC_METRICS)} take >, >=, <, <=, ==, !=. "
-            f"Boolean metrics {sorted(BOOLEAN_METRICS)} and status metrics "
-            f"{sorted(STATUS_METRICS)} take == and != only. No other metric is accepted. "
-            "Offer one only when this step gives you a claim that could turn out false; "
-            "a claim that cannot fail teaches the team nothing."
-        )
+    clause = (
+        '"hypothesis" is a falsifiable claim the team will keep and score against '
+        'measurement: {"condition":[{"metric":...,"op":...,"value":...}], '
+        '"prediction":[...], "horizon":N}. It says that when the condition holds, '
+        f"the prediction will hold within horizon steps ({MIN_HORIZON}..{MAX_HORIZON}). "
+        f"Numeric metrics {sorted(NUMERIC_METRICS)} take >, >=, <, <=, ==, !=. "
+        f"Boolean metrics {sorted(BOOLEAN_METRICS)} and status metrics "
+        f"{sorted(STATUS_METRICS)} take == and != only. No other metric is accepted. "
+        "Offer one only when this step gives you a claim that could turn out false; "
+        "a claim that cannot fail teaches the team nothing."
+    )
     return (
         f"{json_envelope_preamble()}"
         'Required keys: "message", "reasoning". '
-        f"Optional key(s): {optional}. "
-        f"{output_word_limits_clause()}"
-        f"{hypothesis_clause} "
+        'Optional keys: "memory", "hypothesis". '
+        f"{output_word_limits_clause()} "
+        f"{clause} "
         'Example: {"message":"CO2 rising.","reasoning":"co2_ppm crossed threshold",'
         '"memory":"Fan boost may be next."}'
     )
-
 
 def operator_action_contract() -> str:
     return (
