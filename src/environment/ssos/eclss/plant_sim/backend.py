@@ -130,6 +130,28 @@ class PlantSimEclssBackend:
                 "lost_this_step": int(self._last_survival.get("lost_this_step") or 0),
                 "limiting": list(self._last_survival.get("limiting") or []),
             },
+            # Cumulative generation/consumption, added 2026-08-24 for the
+            # mass-balance gate (decision 96). Without these a run's recorded
+            # trajectory cannot be closed per species: the crew side can be
+            # rebuilt from last_metabolism, but OGS/WRS/Sabatier and the
+            # external ledger leave no trace. The 346 v1 runs predate this and
+            # can never be closed retroactively -- that is why the gate ships
+            # with the weaker retroactive form beside the full one.
+            "total_co2_generated_kg": s.total_co2_generated_kg,
+            "total_o2_consumed_kg": s.total_o2_consumed_kg,
+            "total_o2_generated_kg": s.total_o2_generated_kg,
+            "total_electrolysis_water_kg": s.total_electrolysis_water_kg,
+            "total_sabatier_co2_used_kg": s.total_sabatier_co2_used_kg,
+            "total_wrs_recovered_water_l": s.total_wrs_recovered_water_l,
+            "total_water_regenerated_l": s.total_water_regenerated_l,
+            "total_potable_water_consumed_l": s.total_potable_water_consumed_l,
+            "total_urine_generated_l": s.total_urine_generated_l,
+            "total_condensate_generated_l": s.total_condensate_generated_l,
+            "total_unrecoverable_crew_water_l": s.total_unrecoverable_crew_water_l,
+            "total_o2_delivered_kg": s.total_o2_delivered_kg,
+            "total_co2_delivered_kg": s.total_co2_delivered_kg,
+            "total_product_water_delivered_l": s.total_product_water_delivered_l,
+            "total_external_grey_water_submitted_l": s.total_external_grey_water_submitted_l,
         }
         if self._last_metabolism is not None:
             plant_sim_topic["last_metabolism"] = dict(self._last_metabolism)
