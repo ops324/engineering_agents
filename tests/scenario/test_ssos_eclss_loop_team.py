@@ -592,3 +592,45 @@ def test_llm_step_default_single_action_rep(monkeypatch):
     assert len(outcome.commands) == 1
     assert outcome.commands[0].issued_by == "op_1"
 
+
+
+# --- F2: centralisation of integration ---------------------------------------
+
+
+def _team(**agents):
+    from scenario.agents.ssos_eclss_loop_team import SsosEclssLoopTeam
+
+    cfg = {"mode": "labeled_rule_base", "team": {"count": 10, "id_prefix": "eclss_operator"}}
+    cfg.update(agents)
+    return SsosEclssLoopTeam(cfg)
+
+
+def test_central_is_the_default_and_keeps_the_rotating_window():
+    team = _team(max_actions_per_step=2)
+    assert team.integration_mode == "central"
+    assert team._actor_ids(0) == ["eclss_operator_1", "eclss_operator_2"]
+    assert team._actor_ids(1) == ["eclss_operator_2", "eclss_operator_3"]
+
+
+def test_distributed_has_every_operator_act_and_ignores_the_window():
+    team = _team(max_actions_per_step=2, integration={"mode": "distributed"})
+    assert team.integration_mode == "distributed"
+    assert team._actor_ids(0) == list(team.team_cfg.agent_ids)
+    assert team._actor_ids(7) == list(team.team_cfg.agent_ids)
+
+
+def test_unknown_integration_mode_is_refused():
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="integration.mode"):
+        _team(integration={"mode": "partial"})
+
+
+def test_distributed_action_hint_does_not_name_a_representative():
+    from core.agents.persona import PersonaAgent
+
+    central = PersonaAgent.action_round_hint(n_reps=10, slot=0, integration="central")
+    distributed = PersonaAgent.action_round_hint(n_reps=10, slot=0, integration="distributed")
+    assert "representative 1 of 10" in central
+    assert "representative" not in distributed.replace("no team representative", "")
+    assert "act for themselves" in distributed

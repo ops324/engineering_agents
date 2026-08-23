@@ -619,7 +619,23 @@ class PersonaAgent:
         )
 
     @staticmethod
-    def action_round_hint(*, n_reps: int = 1, slot: int = 0) -> str:
+    def action_round_hint(
+        *, n_reps: int = 1, slot: int = 0, integration: str = "central"
+    ) -> str:
+        # F2's distributed level. The difference from the central frame is who
+        # the agent is acting *for*: a representative converts the team's
+        # discourse into the team's commands, and here nobody does that job.
+        # Said explicitly, because "representative k of n" with n equal to the
+        # whole crew still reads as a delegation.
+        if integration == "distributed":
+            return (
+                f"Action round: there is no team representative this step — all {n_reps} "
+                "operators act for themselves, and nobody is integrating on the team's "
+                "behalf. Issue operational commands for what you judge to be your own "
+                "concern; cite named teammates from this step. Empty commands if you "
+                "hold. This action round is simultaneous — you do not see the others' "
+                "commands from this step."
+            )
         if n_reps <= 1:
             return (
                 "Action round (team representative): issue recovery commands when discourse and "

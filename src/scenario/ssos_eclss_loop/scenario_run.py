@@ -471,6 +471,16 @@ class SsosEclssLoopScenario(Scenario):
                 summary["design_proposer_kind"] = "operator_rep"
             if team.mode == "llm":
                 summary["max_actions_per_step"] = team.max_actions_per_step
+                # F2. Recorded next to the action budget on purpose: the
+                # distributed level does not use that budget, and a summary
+                # showing only max_actions_per_step would misstate how many
+                # operators actually acted.
+                summary["integration_mode"] = team.integration_mode
+                summary["actors_per_step"] = (
+                    team.team_cfg.count
+                    if team.integration_mode == "distributed"
+                    else team.max_actions_per_step
+                )
             proposals = team.propose_post_run_design(summary)
             # Who actually proposed, not who was configured to. The design
             # team is a no-op in labeled_rule_base, and a summary claiming it

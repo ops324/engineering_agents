@@ -154,6 +154,26 @@ class SsosEclssLoopTeam(Team):
             config.get("max_actions_per_step", 1),
             team_count=self.team_cfg.count,
         )
+        # F2. "central" is the registered baseline: a rotating window of
+        # representatives converts the step's discourse into the team's
+        # commands. "distributed" removes that job — every operator acts on its
+        # own judgement, so the crew's output is the sum of individual decisions
+        # rather than one integrated one.
+        #
+        # The level therefore changes how many operators act (2 of 10 becomes
+        # 10 of 10 at the shipped settings), and that is the factor, not a side
+        # effect: centralisation is measured in how many minds turn discourse
+        # into commands. It does mean the distributed arm issues more commands
+        # and costs more calls than the central one at equal run count. Both are
+        # recorded in the summary so a result from this arm cannot be read
+        # without them.
+        integration_raw = (config.get("integration") or {}).get("mode", "central")
+        integration_mode = str(integration_raw).strip().lower()
+        if integration_mode not in ("central", "distributed"):
+            raise ValueError(
+                f"integration.mode must be 'central' or 'distributed', got {integration_raw!r}"
+            )
+        self.integration_mode = integration_mode
 
         # Post-run design proposers, separate from the operators above. Absent by
         # default, in which case an operator issues the proposal as before.
@@ -319,6 +339,15 @@ class SsosEclssLoopTeam(Team):
     def _action_rep_id(self, step: int) -> str:
         """Round-robin representative for 0-based scenario steps (`step % N`)."""
         return self.team_cfg.agent_ids[step % self.team_cfg.count]
+
+    def _actor_ids(self, step: int) -> List[str]:
+        """Who acts this step. F2's two levels differ in exactly this."""
+        if self.integration_mode == "distributed":
+            # Every operator, in roster order. max_actions_per_step is the size
+            # of the representative window and there is no window here, so it
+            # does not apply — the summary records both so that is visible.
+            return list(self.team_cfg.agent_ids)
+        return self._action_rep_ids(step)
 
     def _action_rep_ids(self, step: int) -> List[str]:
         """Rotating window of action representatives (length ``max_actions_per_step``)."""
@@ -527,7 +556,7 @@ class SsosEclssLoopTeam(Team):
         if self.critique_enabled and len(step_discourse) > 1:
             step_discourse.extend(self._llm_critique_round(obs, situation, step_discourse, outcome))
 
-        reps = self._action_rep_ids(obs.step)
+        reps = self._actor_ids(obs.step)
         action_turns = run_parallel(
             [
                 self._llm_action_turn(
@@ -876,7 +905,9 @@ class SsosEclssLoopTeam(Team):
         parsed = await agent.deliberate_async(
             ctx,
             contract,
-            PersonaAgent.action_round_hint(n_reps=n_reps, slot=slot),
+            PersonaAgent.action_round_hint(
+                n_reps=n_reps, slot=slot, integration=self.integration_mode
+            ),
             ("commands",),
         )
         if parsed is None:
