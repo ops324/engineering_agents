@@ -452,6 +452,13 @@ class SsosEclssLoopScenario(Scenario):
             # F3. Recorded beside memory_limit because the level changes what
             # that number means — kept, or merely shown.
             summary["memory_policy"] = team.memory_policy
+            if getattr(team, "hypotheses", None) is not None:
+                # Whether the loop actually turned, not only what the ledger
+                # ended up believing. Addendum 16 registers a zero here as an
+                # implementation failure rather than a finding: an arm whose
+                # hypotheses were never scored did not measure this level.
+                summary["hypothesis_memory"] = team.hypotheses.stats()
+                team.hypotheses.write_jsonl(run_dir / "hypotheses.jsonl")
             # Composition is recorded in every mode so a run artifact says which
             # configuration produced it (parity with scrubber_degradation).
             summary["archetypes"] = {

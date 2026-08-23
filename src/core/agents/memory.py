@@ -14,9 +14,11 @@ from core.agents.types import AgentMessage, StepAgentOutcome
 # explicit rather than learned: a stop list derived from the corpus would make
 # retrieval depend on run history, and then two runs with the same memory policy
 # would not be running the same policy.
-# F3's implemented levels. "hypothesis" (design.md 6) is registered and not
-# built yet; it is absent here rather than silently aliased to retrieval.
-MEMORY_POLICIES = frozenset({"none", "naive_retrieval"})
+# F3's three registered levels. "hypothesis" keeps private memory on the
+# recency window: its ledger is the team's, not the agent's (decision 49), and
+# lives in core/agents/hypotheses.py. Naming it here is what lets a config ask
+# for the level.
+MEMORY_POLICIES = frozenset({"none", "naive_retrieval", "hypothesis"})
 
 _RETRIEVAL_STOPWORDS = frozenset(
     """a an and are as at be by for from had has have in is it its of on or
@@ -59,7 +61,12 @@ class AgentMemory:
         self.entries.append(text)
         # Retrieval cannot rank what was thrown away. Under a retrieval policy
         # the history is kept and `limit` bounds what is surfaced instead.
-        if self.policy == "none" and len(self.entries) > self.limit:
+        # Keyed on the retrieval policy rather than on "not baseline": the
+        # hypothesis level leaves private memory exactly as the baseline has it,
+        # and testing for "none" here would have given it a third behaviour —
+        # keeping everything and still showing only the tail — that no level
+        # asks for.
+        if self.policy != "naive_retrieval" and len(self.entries) > self.limit:
             self.entries = self.entries[-self.limit :]
 
     def recent(self, n: int | None = None) -> List[str]:

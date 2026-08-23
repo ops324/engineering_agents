@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.agents.base import Team
+from core.agents.hypotheses import HypothesisStore
 from core.agents.memory import TeamMemoryStore
 from core.agents.persona import (
     DesignTeamConfig,
@@ -134,7 +135,14 @@ class SsosEclssLoopTeam(Team):
             agent_ids=list(self.personas.keys()),
             memory_limit=int(config.get("memory_limit", 8)),
             discourse_window=int(config.get("discourse_window", 12)),
-            memory_policy=self.memory_policy,
+            # The hypothesis level leaves private memory on the recency window;
+            # its ledger is the team's and is held separately.
+            memory_policy=(
+                "none" if self.memory_policy == "hypothesis" else self.memory_policy
+            ),
+        )
+        self.hypotheses: Optional[HypothesisStore] = (
+            HypothesisStore() if self.memory_policy == "hypothesis" else None
         )
         self.agents: Dict[str, PersonaAgent] = {
             agent_id: PersonaAgent(
@@ -524,6 +532,15 @@ class SsosEclssLoopTeam(Team):
         outcome = StepEclssOutcome()
         step_discourse: List[AgentMessage] = []
         situation = build_llm_situation(obs)
+        if self.hypotheses is not None:
+            # Score first, then arm, then show. Scoring before arming is what
+            # keeps a hypothesis from grading its own re-firing; showing after
+            # both is what lets an operator see the ledger as it now stands.
+            reading = _hypothesis_reading(obs)
+            self.hypotheses.observe(obs.step, reading)
+            ledger = self.hypotheses.describe(reading)
+            if ledger:
+                situation = f"{situation}\n\n{ledger}"
         # Simultaneous round: all agents see prior-step team discourse only, so
         # vLLM can batch the N in-flight requests instead of walking the roster.
         team_discourse = self.memory_store.discourse.recent()
@@ -538,7 +555,7 @@ class SsosEclssLoopTeam(Team):
                     situation=situation,
                     step_discourse=[],
                     team_discourse=team_discourse,
-                    contract=message_contract(),
+                    contract=message_contract(hypotheses=self.hypotheses is not None),
                     required=("message",),
                 )
                 for agent_id in self.team_cfg.agent_ids
@@ -880,6 +897,14 @@ class SsosEclssLoopTeam(Team):
         llm_memory = parsed.data.get("memory")
         if llm_memory:
             metadata["llm_memory"] = str(llm_memory)
+        if self.hypotheses is not None and parsed.data.get("hypothesis"):
+            # Recorded on the message that carried it, accepted or not, so the
+            # artifact says who offered what rather than only what survived.
+            offered = self.hypotheses.propose(
+                parsed.data["hypothesis"], step=obs.step, agent_id=agent_id
+            )
+            metadata["hypothesis_id"] = offered.id if offered is not None else None
+            metadata["hypothesis_accepted"] = offered is not None
         return AgentMessage(
             step=obs.step,
             from_role=agent_id,
@@ -1258,6 +1283,30 @@ _ECLSS_OPERATIONAL_LEVERS = """\
   request_co2_before_ogs is explicitly enabled or discourse justifies it).
 - request_o2: Service call — payload {"amount": <kg>} withdraw O2 from plant /o2_storage reserve.
 Actions are asynchronous; issue only commands justified by Telemetry and team discourse."""
+
+
+def _hypothesis_reading(obs: EclssLoopObservation) -> Dict[str, Any]:
+    """The measurement a prediction is scored against.
+
+    Exactly the metrics hypotheses.KNOWN_METRICS admits, read off the same
+    observation the operators are shown — so a hypothesis is scored against
+    what the team could see, not against interior state it could not.
+    """
+    t = obs.telemetry
+    health = obs.health if isinstance(obs.health, dict) else {}
+    return {
+        "co2_storage_kg": t.co2_storage_kg,
+        "o2_storage_kg": t.o2_storage_kg,
+        "product_water_reserve_l": t.product_water_reserve_l,
+        "grey_water_collected_l": t.grey_water_collected_l,
+        "ars_failure_enabled": t.ars_failure_enabled,
+        "ogs_failure_enabled": t.ogs_failure_enabled,
+        "wrs_failure_enabled": t.wrs_failure_enabled,
+        "overall": health.get("overall"),
+        "co2_status": health.get("co2_status"),
+        "o2_status": health.get("o2_status"),
+        "water_status": health.get("water_status"),
+    }
 
 
 def build_llm_situation(obs: EclssLoopObservation) -> str:

@@ -103,9 +103,21 @@ def test_no_match_still_returns_entries_rather_than_nothing():
     assert mem.retrieve("zzzz") == ["co2 high", "o2 low"]
 
 
+def test_the_hypothesis_level_leaves_private_memory_on_the_window():
+    """Its ledger is the team's, so the per-agent store stays the baseline."""
+    from core.agents.memory import TeamMemoryStore
+
+    store = TeamMemoryStore(agent_ids=["a"], memory_limit=2, memory_policy="hypothesis")
+    memory = store.agent_memories["a"]
+    for i in range(5):
+        memory.append(f"entry {i}")
+    assert memory.entries == ["entry 3", "entry 4"], "should discard like the baseline"
+    assert memory.retrieve("entry") == ["entry 3", "entry 4"]
+
+
 def test_unknown_memory_policy_is_refused():
     import pytest as _pytest
     from core.agents.memory import TeamMemoryStore
 
     with _pytest.raises(ValueError, match="memory_policy"):
-        TeamMemoryStore(agent_ids=["a"], memory_policy="hypothesis")
+        TeamMemoryStore(agent_ids=["a"], memory_policy="vector_index")

@@ -344,12 +344,44 @@ def output_word_limits_clause() -> str:
     )
 
 
-def message_contract() -> str:
+def message_contract(*, hypotheses: bool = False) -> str:
+    """The deliberation reply contract.
+
+    `hypotheses` adds F3's hypothesis-memory level. The clause is generated from
+    the schema in core/agents/hypotheses.py rather than written out here, so the
+    metrics an agent is told about cannot drift from the metrics the scorer will
+    accept — an agent offering a hypothesis about a metric that is silently
+    rejected is an agent whose memory never learns anything.
+    """
+    optional = '"memory"'
+    hypothesis_clause = ""
+    if hypotheses:
+        from core.agents.hypotheses import (
+            BOOLEAN_METRICS,
+            MAX_HORIZON,
+            MIN_HORIZON,
+            NUMERIC_METRICS,
+            STATUS_METRICS,
+        )
+
+        optional = '"memory", "hypothesis"'
+        hypothesis_clause = (
+            ' "hypothesis" is a falsifiable claim the team will keep and score against '
+            'measurement: {"condition":[{"metric":...,"op":...,"value":...}], '
+            '"prediction":[...], "horizon":N}. It says that when the condition holds, '
+            f"the prediction will hold within horizon steps ({MIN_HORIZON}..{MAX_HORIZON}). "
+            f"Numeric metrics {sorted(NUMERIC_METRICS)} take >, >=, <, <=, ==, !=. "
+            f"Boolean metrics {sorted(BOOLEAN_METRICS)} and status metrics "
+            f"{sorted(STATUS_METRICS)} take == and != only. No other metric is accepted. "
+            "Offer one only when this step gives you a claim that could turn out false; "
+            "a claim that cannot fail teaches the team nothing."
+        )
     return (
         f"{json_envelope_preamble()}"
         'Required keys: "message", "reasoning". '
-        'Optional key: "memory". '
-        f"{output_word_limits_clause()} "
+        f"Optional key(s): {optional}. "
+        f"{output_word_limits_clause()}"
+        f"{hypothesis_clause} "
         'Example: {"message":"CO2 rising.","reasoning":"co2_ppm crossed threshold",'
         '"memory":"Fan boost may be next."}'
     )
