@@ -339,6 +339,21 @@ class HypothesisStore:
         }
 
     def write_jsonl(self, path: Path) -> None:
+        """The ledger, and what was refused entry to it.
+
+        Refusals are written for the same reason 6.3 keeps refuted hypotheses:
+        the record of what did not hold is worth as much as the record of what
+        did. Concretely — the first check run refused every offer, and the cause
+        was only findable because a raw excerpt happened to reach far enough to
+        show the malformed field. With the count alone, "the contract asked for
+        the wrong shape" and "the model cannot form a hypothesis" look the same.
+        """
         with Path(path).open("w", encoding="utf-8") as f:
             for hypothesis in self.hypotheses:
-                f.write(json.dumps(hypothesis.as_dict(), ensure_ascii=False) + "\n")
+                f.write(json.dumps(
+                    {"kind": "hypothesis", **hypothesis.as_dict()}, ensure_ascii=False
+                ) + "\n")
+            for refusal in self.rejected:
+                f.write(json.dumps(
+                    {"kind": "refused", **refusal}, ensure_ascii=False
+                ) + "\n")

@@ -159,3 +159,35 @@ def test_boolean_and_status_metrics_parse_and_compare():
 def test_an_ordering_operator_is_refused_on_a_status_metric():
     _, note = parse_predicate({"metric": "co2_status", "op": ">", "value": "critical"})
     assert "not allowed" in note
+
+
+def test_the_ledger_records_what_it_refused_and_why(tmp_path):
+    """A count alone cannot tell a bad contract from a model that cannot comply."""
+    store = HypothesisStore()
+    store.propose(
+        {"condition": [CO2_HIGH], "prediction": [O2_LOW], "horizon": 1},
+        step=0, agent_id="a",
+    )
+    store.propose(
+        {"condition": [CO2_HIGH], "prediction": ["request_o2"], "horizon": 2},
+        step=1, agent_id="b",
+    )
+    path = tmp_path / "hypotheses.jsonl"
+    store.write_jsonl(path)
+    rows = [__import__("json").loads(line) for line in path.read_text().splitlines()]
+    kinds = [r["kind"] for r in rows]
+    assert kinds == ["hypothesis", "refused"]
+    refused = rows[1]
+    assert refused["agent_id"] == "b"
+    assert refused["raw"]["prediction"] == ["request_o2"]
+    assert any("prediction" in reason for reason in refused["reasons"])
+
+
+def test_a_bare_string_prediction_is_refused_with_a_reason():
+    """The shape every offer in the first check run came back with."""
+    store = HypothesisStore()
+    assert store.propose(
+        {"condition": [CO2_HIGH], "prediction": ["request_o2"], "horizon": 2},
+        step=0, agent_id="a",
+    ) is None
+    assert any("predicate must be an object" in r for r in store.rejected[0]["reasons"])

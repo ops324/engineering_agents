@@ -378,14 +378,27 @@ def message_contract(*, hypotheses: bool = False) -> str:
         STATUS_METRICS,
     )
 
+    # Both sides are spelled out. The first version abbreviated the prediction
+    # as "[...]" and every offer in the check run came back with a well-formed
+    # condition and a prediction of bare strings — nine for nine, then
+    # fifty-five for fifty-five. Abbreviating one side of a structure collects
+    # the errors there.
     clause = (
-        '"hypothesis" is a falsifiable claim the team will keep and score against '
-        'measurement: {"condition":[{"metric":...,"op":...,"value":...}], '
-        '"prediction":[...], "horizon":N}. It says that when the condition holds, '
-        f"the prediction will hold within horizon steps ({MIN_HORIZON}..{MAX_HORIZON}). "
+        '"hypothesis" is a falsifiable claim the team keeps and scores against '
+        "measurement. Both condition and prediction are lists of the SAME kind of "
+        "object — {\"metric\": name, \"op\": comparison, \"value\": value} — and a "
+        "prediction says what a MEASUREMENT will read, never what anyone should do. "
+        "A command name is not a prediction. Full shape: "
+        '{"condition":[{"metric":"co2_storage_kg","op":">=","value":1.8}],'
+        '"prediction":[{"metric":"o2_storage_kg","op":"<","value":0.5}],"horizon":2} '
+        "— read as: whenever CO2 storage is at or above 1.8, O2 storage will be below "
+        "0.5 within 2 steps. "
+        f"horizon is an integer {MIN_HORIZON}..{MAX_HORIZON}. "
         f"Numeric metrics {sorted(NUMERIC_METRICS)} take >, >=, <, <=, ==, !=. "
-        f"Boolean metrics {sorted(BOOLEAN_METRICS)} and status metrics "
-        f"{sorted(STATUS_METRICS)} take == and != only. No other metric is accepted. "
+        f"Boolean metrics {sorted(BOOLEAN_METRICS)} take == and != with true/false. "
+        f"Status metrics {sorted(STATUS_METRICS)} take == and != with one of "
+        '"safe", "warning", "critical". No other metric is accepted and a hypothesis '
+        "naming one is discarded. "
         "Offer one only when this step gives you a claim that could turn out false; "
         "a claim that cannot fail teaches the team nothing."
     )
