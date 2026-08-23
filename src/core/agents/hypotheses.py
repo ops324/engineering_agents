@@ -184,6 +184,33 @@ def _parse_side(raw: Any, label: str) -> Tuple[Tuple[Predicate, ...], List[str]]
     return tuple(predicates), []
 
 
+def entails(condition: Iterable[Predicate], prediction: Iterable[Predicate]) -> bool:
+    """True when the condition already guarantees the prediction.
+
+    Decided only for the same-metric, same-direction case. Entailment across
+    metrics needs a model of the plant, which this does not have and must not
+    guess at — an undecided pair is treated as not entailed, so the check only
+    ever refuses claims it can prove cannot fail.
+    """
+    for wanted in prediction:
+        proved = False
+        for given in condition:
+            if given.metric != wanted.metric:
+                continue
+            if given.op == "==" and wanted.op == "==" and given.value == wanted.value:
+                proved = True
+            elif given.op == "==" and wanted.op == "!=" and given.value != wanted.value:
+                proved = True
+            elif given.metric in NUMERIC_METRICS:
+                if given.op in (">", ">=") and wanted.op in (">", ">=") and given.value >= wanted.value:
+                    proved = True
+                elif given.op in ("<", "<=") and wanted.op in ("<", "<=") and given.value <= wanted.value:
+                    proved = True
+        if not proved:
+            return False
+    return True
+
+
 @dataclass
 class HypothesisStore:
     """The team's ledger. Shared, not per-agent (decision 49)."""
@@ -241,6 +268,20 @@ class HypothesisStore:
             )
         if notes:
             self._refuse(raw, notes, step=step, agent_id=agent_id)
+            return None
+        # The contract already says a claim that cannot fail teaches the team
+        # nothing, and fifty-seven of the 2,149 hypotheses accepted across the
+        # S2 arm could not fail — "when o2_storage_kg < 0.5, then within three
+        # steps o2_storage_kg < 0.5" and its kind. Saying it in the contract did
+        # not keep them out; intake has to decide it, and for same-metric pairs
+        # it can.
+        if entails(condition, prediction):
+            self._refuse(
+                raw,
+                ["the condition already guarantees the prediction: it cannot fail"],
+                step=step,
+                agent_id=agent_id,
+            )
             return None
         # A hypothesis already in the ledger is not added twice; the ledger is
         # the team's, so two operators claiming the same thing is one claim with

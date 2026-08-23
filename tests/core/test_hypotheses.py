@@ -218,3 +218,49 @@ def test_a_refused_offer_keeps_its_raw_shape_whatever_it_was():
     store.propose([1, 2, 3], step=1, agent_id="b")
     assert store.rejected[0]["raw"] == "not an object at all"
     assert store.rejected[1]["raw"] == [1, 2, 3]
+
+
+# --- a claim that cannot fail is refused (decision 71) -----------------------
+
+
+def test_a_prediction_its_condition_guarantees_is_refused():
+    """The literal shape 57 of 2,149 accepted hypotheses had in the S2 arm."""
+    store = HypothesisStore()
+    assert store.propose(
+        {"condition": [O2_LOW], "prediction": [O2_LOW], "horizon": 3},
+        step=0, agent_id="a",
+    ) is None
+    assert "cannot fail" in store.rejected[0]["reasons"][0]
+
+
+def test_a_weaker_prediction_than_the_condition_is_also_refused():
+    store = HypothesisStore()
+    assert store.propose(
+        {
+            "condition": [{"metric": "co2_storage_kg", "op": ">=", "value": 3.0}],
+            "prediction": [{"metric": "co2_storage_kg", "op": ">", "value": 1.0}],
+            "horizon": 2,
+        },
+        step=0, agent_id="a",
+    ) is None
+
+
+def test_a_claim_across_metrics_is_kept_even_though_it_may_be_obvious():
+    """Entailment across metrics needs a plant model; guessing would refuse real claims."""
+    store = HypothesisStore()
+    assert store.propose(
+        {"condition": [CO2_HIGH], "prediction": [O2_LOW], "horizon": 2},
+        step=0, agent_id="a",
+    ) is not None
+
+
+def test_a_prediction_in_the_opposite_direction_is_kept():
+    store = HypothesisStore()
+    assert store.propose(
+        {
+            "condition": [{"metric": "o2_storage_kg", "op": "<", "value": 0.5}],
+            "prediction": [{"metric": "o2_storage_kg", "op": ">", "value": 0.5}],
+            "horizon": 2,
+        },
+        step=0, agent_id="a",
+    ) is not None
