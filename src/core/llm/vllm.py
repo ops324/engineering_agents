@@ -319,3 +319,42 @@ def _build_http_session(pool_size: int) -> requests.Session:
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session
+
+
+def fetch_served_model_ids(
+    llm_cfg: Optional[Dict[str, Any]] = None,
+    *,
+    timeout: int = CONNECTION_CHECK_TIMEOUT,
+) -> Optional[list]:
+    """The ids the server is actually serving, or None when it cannot be asked.
+
+    The port does not imply the model -- see the module docstring for the two
+    swaps :8000 went through in four days. A run that records the id it asked
+    for and never the id on offer cannot be pooled with another run, and
+    nothing downstream can tell that it was pooled wrongly.
+
+    ``None`` means *unknown* (unreachable, or a body in a shape we do not
+    recognise) and is deliberately distinct from ``[]``, which means the
+    server answered and is serving nothing.
+    """
+    base_url = resolve_vllm_base_url(llm_cfg)
+    try:
+        response = requests.get(
+            f"{base_url}/models",
+            headers=vllm_auth_headers(llm_cfg),
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except Exception as exc:
+        logger.warning("vLLM /models probe failed at %s: %s", base_url, exc)
+        return None
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, list):
+        logger.warning("vLLM /models at %s returned no data list", base_url)
+        return None
+    return [
+        str(entry["id"])
+        for entry in data
+        if isinstance(entry, dict) and entry.get("id")
+    ]

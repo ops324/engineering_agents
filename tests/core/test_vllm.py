@@ -12,6 +12,7 @@ from core.llm.vllm import (
     _CHARS_PER_TOKEN,
     _clamp_completion_tokens,
     _fit_prompt_to_context,
+    fetch_served_model_ids,
     looks_like_ollama_url,
     normalize_vllm_base_url,
     resolve_vllm_base_url,
@@ -217,3 +218,45 @@ def test_vllm_generate_clamps_output_when_window_is_tight(monkeypatch):
     prompt = captured["json"]["messages"][0]["content"]
     prompt_tokens = (len(prompt) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN
     assert max_tokens + prompt_tokens + _CHAT_TEMPLATE_OVERHEAD_TOKENS <= 1024
+
+
+class _ModelsResponse:
+    def __init__(self, body, status_code=200):
+        self._body = body
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code != 200:
+            raise RuntimeError(f"status {self.status_code}")
+
+    def json(self):
+        return self._body
+
+
+def test_fetch_served_model_ids_reads_the_data_list(monkeypatch):
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+    body = {"data": [{"id": "Qwen/Qwen3-8B"}, {"id": "qwen3.5-9b"}]}
+    monkeypatch.setattr(
+        "core.llm.vllm.requests.get", lambda *a, **k: _ModelsResponse(body)
+    )
+    assert fetch_served_model_ids({}) == ["Qwen/Qwen3-8B", "qwen3.5-9b"]
+
+
+def test_fetch_served_model_ids_unknown_is_not_empty(monkeypatch):
+    """None (could not ask) must not be confused with [] (serving nothing)."""
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("VPN down")
+
+    monkeypatch.setattr("core.llm.vllm.requests.get", boom)
+    assert fetch_served_model_ids({}) is None
+
+
+def test_fetch_served_model_ids_rejects_a_body_without_a_data_list(monkeypatch):
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+    monkeypatch.setattr(
+        "core.llm.vllm.requests.get",
+        lambda *a, **k: _ModelsResponse({"object": "list"}),
+    )
+    assert fetch_served_model_ids({}) is None

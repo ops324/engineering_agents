@@ -1,6 +1,7 @@
 """Select an LLM client from agents.yaml / env (Ollama or lab vLLM)."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
@@ -8,13 +9,17 @@ from core.llm.base import LLMClient
 from core.llm.ollama import OllamaClient, resolve_ollama_base_url
 from core.llm.vllm import (
     VllmClient,
+    fetch_served_model_ids,
     resolve_vllm_api_key,
     resolve_vllm_api_timeout,
     resolve_vllm_base_url,
     resolve_vllm_model,
 )
 
+logger = logging.getLogger(__name__)
+
 LLM_PROVIDER_ENV = "LLM_PROVIDER"
+SERVED_MODEL_STRICT_ENV = "EA_REQUIRE_SERVED_MODEL"
 VALID_LLM_PROVIDERS = frozenset({"ollama", "vllm"})
 DEFAULT_PROVIDER = "ollama"
 
@@ -96,3 +101,62 @@ def build_llm_client(
         max_concurrency=max_concurrency,
         seed=seed,
     )
+
+
+def probe_served_model(llm_cfg: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Ask the backend which model it will answer with, before the run spends on it.
+
+    Returns None where the question is not meaningful: Ollama pins the tag on
+    the host running it, so the requested id is the served id.
+
+    ``status: "mismatch"`` is the case worth an early stop. VllmClient.generate
+    swallows the 404 the miss produces and returns "", so the run finishes,
+    writes a summary naming the model it *asked* for, and leaves the only
+    evidence in ``llm_usage.failed_calls`` -- discovered, if at all, an hour of
+    GPU time later.
+    """
+    provider = resolve_llm_provider(llm_cfg)
+    if provider != "vllm":
+        return None
+    requested = resolve_vllm_model(llm_cfg)
+    served = fetch_served_model_ids(llm_cfg)
+    record: Dict[str, Any] = {"requested": requested}
+    if served is None:
+        record["status"] = "unknown"
+        return record
+    record["served"] = served
+    record["status"] = "ok" if requested in served else "mismatch"
+    return record
+
+
+def served_model_is_strict() -> bool:
+    """Whether a mismatch should stop the run rather than warn.
+
+    Opt-in, so a sweep already in flight keeps the behaviour it started with.
+    The warning below is not opt-in.
+    """
+    return os.environ.get(SERVED_MODEL_STRICT_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+def require_served_model(record: Optional[Dict[str, Any]]) -> None:
+    """Log the probe, and raise on a mismatch when strict mode is on."""
+    if not record:
+        return
+    status = record.get("status")
+    if status == "ok":
+        return
+    if status == "unknown":
+        logger.warning(
+            "Could not confirm the served model for %r; the run will proceed "
+            "and summary.llm.served.status records the gap.",
+            record.get("requested"),
+        )
+        return
+    message = (
+        f"Requested model {record.get('requested')!r} is not served here; "
+        f"the server offers {record.get('served')!r}. Every generate() call "
+        f"will fail and return an empty string."
+    )
+    if served_model_is_strict():
+        raise RuntimeError(message)
+    logger.error("%s Set %s=1 to make this stop the run.", message, SERVED_MODEL_STRICT_ENV)

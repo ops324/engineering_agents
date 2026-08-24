@@ -16,7 +16,7 @@ import yaml
 
 from core.code_version import describe_code_version
 from core.event_log import EventLog
-from core.llm.factory import describe_llm_target
+from core.llm.factory import describe_llm_target, probe_served_model, require_served_model
 from core.scenario import Scenario
 from environment.ssos.eclss.backend import EclssBackend
 from environment.ssos.eclss.types import EclssTelemetrySnapshot
@@ -244,6 +244,13 @@ class SsosEclssLoopScenario(Scenario):
             seeded_llm = dict(agents_config.get("llm") or {})
             seeded_llm.setdefault("seed", int(sim_cfg["seed"]))
             agents_config = {**agents_config, "llm": seeded_llm}
+        # Asked before the first step, not after the last: a run against a
+        # model the server is not holding produces empty completions all the
+        # way through, and the cheapest place to learn that is here.
+        served_model_probe: Optional[Dict[str, Any]] = None
+        if (agents_config or {}).get("mode") == "llm":
+            served_model_probe = probe_served_model((agents_config or {}).get("llm") or {})
+            require_served_model(served_model_probe)
         output_cfg = config.get("output", {})
         backend_kind = resolve_backend_kind(config, overrides)
         # Persist the resolved kind (CLI / SSOS_ECLSS_BACKEND may differ from YAML).
@@ -433,6 +440,11 @@ class SsosEclssLoopScenario(Scenario):
                     "seed": llm_cfg.get("seed"),
                 }
             )
+            # Kept beside the requested id rather than replacing it: which one
+            # was asked for and which one answered are different facts, and a
+            # run that conflates them cannot be excluded from a pool later.
+            if served_model_probe is not None:
+                summary["llm"]["served"] = served_model_probe
 
         # Recorded in every run, self-modifying or not, so "F7 was absent" is a
         # value in the artifact rather than a missing key.
