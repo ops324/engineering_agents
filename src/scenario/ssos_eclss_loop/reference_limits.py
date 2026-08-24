@@ -222,6 +222,43 @@ class Habitat:
         }
 
 
+#: The habitat this scenario is scored in, chosen 2026-08-24.
+#:
+#: A modelling choice, not a measured module, and it is the weakest number in
+#: any ppCO2 figure downstream -- ppCO2 scales as 1/volume, so it is recorded
+#: in every scored artifact rather than assumed.
+#:
+#: It was chosen because it is the only volume tried that makes the scenario's
+#: existing thresholds a coherent alarm ladder *below* the standard rather than
+#: above it. At 388 m3, with the operating points measured over 270 runs:
+#:
+#:     1.40 mmHg  nominal (1.3 kg)          comfortably under the limit
+#:     1.62 mmHg  co2_storage_high_kg       "start acting"
+#:     2.37 mmHg  co2_storage_critical_kg   "escalate"
+#:     3.00 mmHg  NASA-STD-3001 [V2 6004]   "the standard is now violated"
+#:     3.45 mmHg  worst peak under failure  crossed only when something breaks
+#:
+#: The 61.3 m3 that the critical threshold back-solves to was rejected: it puts
+#: nominal operation at 8.9 mmHg, already past the standard, with both alarms
+#: firing long after the limit rather than before it -- and it is circular, a
+#: volume derived from the threshold it is then said to corroborate. It also
+#: only fits one of the two thresholds; at 61.3 m3 co2_storage_high_kg lands on
+#: 10.23 mmHg, which corresponds to nothing.
+#:
+#: Replace it when the modelled module is known. Nothing else changes: the
+#: volume converts kg to mmHg on the output side and touches no physics, so
+#: existing runs can simply be re-scored.
+SCENARIO_HABITAT = Habitat(
+    volume_m3=388.0,
+    source="modelling choice (2026-08-24)",
+    note=(
+        "Chosen so the scenario's own thresholds sit below NASA-STD-3001 "
+        "[V2 6004] rather than above it; ISS USOS habitable volume is the "
+        "nearest real reference. Not a measured module."
+    ),
+)
+
+
 class HabitatUnknown(RuntimeError):
     """Asked for a partial pressure with no habitat to take it in."""
 

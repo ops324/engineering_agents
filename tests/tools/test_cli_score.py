@@ -37,12 +37,14 @@ def run_dir(tmp_path):
     return result.run_dir
 
 
-def test_score_refuses_to_pick_a_yardstick_for_you(tmp_path, run_dir):
-    """Defaulting would mean grading a run against thresholds its own proposal
-    may have moved."""
+def test_score_defaults_to_the_bar_nothing_here_can_edit(tmp_path, run_dir):
+    """No flags means NASA-STD-3001 at the scenario habitat. Defaulting to the
+    run's *own* thresholds would grade it against a bar its own proposal may
+    have moved; defaulting to the standard cannot drift at all."""
     result = runner.invoke(app, ["score", str(run_dir)])
-    assert result.exit_code == 2
-    assert "--baseline" in result.output
+    assert result.exit_code == 0
+    assert "yardstick=nasa-std-3001" in result.output
+    assert "[V2 6004]" in result.output
 
 
 def test_score_refuses_two_yardsticks_at_once(tmp_path, run_dir):
@@ -146,7 +148,7 @@ def test_evaluate_rejects_an_unknown_band_before_paying_for_the_runs(tmp_path, r
     result = runner.invoke(
         app,
         ["evaluate", str(run_dir), "--results-root", str(tmp_path),
-         "--habitat-volume", "61.3", "--band", "nope"],
+         "--band", "nope"],
     )
     assert result.exit_code == 2
     assert "unknown band" in result.output

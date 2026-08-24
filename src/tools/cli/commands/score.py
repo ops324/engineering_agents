@@ -15,7 +15,11 @@ from scenario.ssos_eclss_loop.proposal_evaluation import (
     evaluate_proposal,
     write_proposal_evaluation,
 )
-from scenario.ssos_eclss_loop.reference_limits import Habitat
+from scenario.ssos_eclss_loop.reference_limits import (
+    SCENARIO_HABITAT,
+    Habitat,
+    ppco2_mmhg,
+)
 from scenario.ssos_eclss_loop.trajectory_metrics import (
     NotScorable,
     Yardstick,
@@ -52,14 +56,22 @@ def _build_yardstick(
     those are the keys health scoring reads, so a run's own bar may be a bar its
     own proposal moved.
     """
-    if (baseline is None) == (habitat_volume_m3 is None):
+    if baseline is not None and habitat_volume_m3 is not None:
         raise typer.BadParameter(
-            "give exactly one of --baseline RUN (freeze that run's thresholds) "
-            "or --habitat-volume M3 (NASA-STD-3001 limits, converted through "
-            "the habitat)"
+            "give at most one of --baseline RUN (freeze that run's thresholds) "
+            "or --habitat-volume M3"
         )
-    if habitat_volume_m3 is not None:
-        return from_reference_limits(Habitat(volume_m3=float(habitat_volume_m3)))
+    if baseline is None:
+        # NASA-STD-3001 at the scenario habitat is the default because it is
+        # the bar nothing in this repository can edit. A frozen baseline is
+        # sound too, but only as long as that baseline predates every proposal
+        # in the chain -- and this is an iterative loop.
+        habitat = (
+            Habitat(volume_m3=float(habitat_volume_m3))
+            if habitat_volume_m3 is not None
+            else SCENARIO_HABITAT
+        )
+        return from_reference_limits(habitat)
     baseline_dir = _resolve_run(str(baseline), root)
     summary_path = baseline_dir / "summary.json"
     if not summary_path.is_file():
@@ -120,7 +132,20 @@ def score(
         f"{metrics['run_id']}  steps={metrics['steps']}  "
         f"yardstick={metrics['yardstick']['source']}"
     )
-    typer.echo(f"  peak {co2['peak_kg']:.4g} kg   terminal {co2['terminal_kg']:.4g} kg")
+    habitat_detail = (metrics["yardstick"].get("detail") or {}).get("habitat") or {}
+    volume = habitat_detail.get("volume_m3")
+    if volume:
+        # The unit the standard is written in. Reporting only kg leaves the
+        # reader to do the conversion that the habitat exists to perform.
+        habitat = Habitat(volume_m3=float(volume))
+        typer.echo(
+            f"  peak {co2['peak_kg']:.4g} kg = {ppco2_mmhg(co2['peak_kg'], habitat):.2f} mmHg"
+            f"   terminal {co2['terminal_kg']:.4g} kg"
+            f" = {ppco2_mmhg(co2['terminal_kg'], habitat):.2f} mmHg"
+        )
+        typer.echo(f"  habitat {volume:g} m3 — {habitat_detail.get('source', 'unstated')}")
+    else:
+        typer.echo(f"  peak {co2['peak_kg']:.4g} kg   terminal {co2['terminal_kg']:.4g} kg")
     for name, stats in co2["bands"].items():
         if band and name != band:
             continue
@@ -147,7 +172,7 @@ def evaluate(
         "--habitat-volume",
         help="Score against NASA-STD-3001 instead of the baseline's own frozen thresholds.",
     ),
-    band: str = typer.Option("critical", "--band"),
+    band: Optional[str] = typer.Option(None, "--band", help="Default: the most stringent band."),
     results_root: Optional[Path] = typer.Option(None, "--results-root"),
     write: bool = typer.Option(False, "--write", help="Write proposal_evaluation.json."),
     json_output: bool = typer.Option(False, "--json"),
@@ -159,15 +184,15 @@ def evaluate(
     """
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    yardstick = (
-        from_reference_limits(Habitat(volume_m3=float(habitat_volume_m3)))
+    yardstick = from_reference_limits(
+        Habitat(volume_m3=float(habitat_volume_m3))
         if habitat_volume_m3 is not None
-        else None
+        else SCENARIO_HABITAT
     )
     # Checked before either arm runs: an unknown band otherwise raises KeyError
     # after both simulations have already been paid for.
-    known = {b.name for b in yardstick.bands} if yardstick is not None else None
-    if known is not None and band not in known:
+    known = {b.name for b in yardstick.bands}
+    if band is not None and band not in known:
         print_error(f"unknown band {band!r}", hint=f"available: {', '.join(sorted(known))}")
         raise typer.Exit(exit_codes.USER_ERROR)
     try:
