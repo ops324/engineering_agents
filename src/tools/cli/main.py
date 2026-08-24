@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from tools import __version__
-from tools.cli.commands import doctor, gate, job, results, run, scenarios
+from tools.cli.commands import doctor, gate, job, results, run, scenarios, score
 
 app = typer.Typer(
     name="ea",
@@ -41,3 +41,4 @@ results.register(app)
 doctor.register(app)
 job.register(app)
 gate.register(app)
+score.register(app)
