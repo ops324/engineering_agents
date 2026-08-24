@@ -332,3 +332,60 @@ def test_an_empty_telemetry_file_is_an_error_not_a_pass(tmp_path):
     (run_dir / "telemetry.jsonl").write_text("", encoding="utf-8")
     with pytest.raises(TelemetryUnreadable):
         evaluate_physics_gate(run_dir)
+
+
+# --------------------------------------------------------------------------- #
+# backends that model fewer pools
+# --------------------------------------------------------------------------- #
+def mock_backend_trajectory():
+    """What the ``mock`` backend actually emits.
+
+    No grey-water loop, no ``raw_topics`` at all -- shape taken from a real
+    ``ea run ssos_eclss_loop --backend mock`` trajectory.
+    """
+    return [
+        {
+            "step": step,
+            "co2_storage_kg": 1.3 + 0.06 * step,
+            "o2_storage_kg": 2.98 - 0.01 * step,
+            "product_water_reserve_l": 51.0 - 0.2 * step,
+            "ars_failure_enabled": False,
+            "ogs_failure_enabled": False,
+            "wrs_failure_enabled": False,
+        }
+        for step in range(4)
+    ]
+
+
+def test_a_backend_without_a_grey_water_loop_is_not_failed_for_lacking_one(tmp_path):
+    """mock models no grey water; requiring it fails runs for what they never had."""
+    result = evaluate_physics_gate(_write(tmp_path, mock_backend_trajectory()))
+    assert result["verdict"] == PASS
+    assert result["form"] == "retroactive"
+    assert "readings_present_and_finite" not in result["failed_checks"]
+
+
+def test_a_backend_without_a_grey_water_loop_still_gets_the_checks_it_can_have(tmp_path):
+    records = mock_backend_trajectory()
+    records[2]["o2_storage_kg"] = -0.5
+    result = evaluate_physics_gate(_write(tmp_path, records))
+    assert result["verdict"] == FAIL
+    assert result["failed_checks"] == ["inventories_non_negative"]
+
+
+def test_a_missing_reading_every_backend_emits_is_still_a_failure(tmp_path):
+    records = mock_backend_trajectory()
+    del records[1]["co2_storage_kg"]
+    result = evaluate_physics_gate(_write(tmp_path, records))
+    assert result["verdict"] == FAIL
+    assert result["failed_checks"] == ["readings_present_and_finite"]
+
+
+def test_the_water_ledger_skips_rather_than_raises_without_a_grey_water_pool():
+    """Declared needs, not discovered ones: no KeyError on the first access."""
+    records = mock_backend_trajectory()
+    for record in records:
+        record["raw_topics"] = {"plant_sim": dict(ZERO_TOTALS)}
+    result = check_water_ledger(records)
+    assert result.status == SKIPPED
+    assert "grey_water_collected_l" in result.detail
