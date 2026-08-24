@@ -24,7 +24,21 @@ class PlantConfigError(ValueError):
 class PlantSimConfig:
     # --- time ---
     step_seconds: float = 1200.0            # observation interval (Q6)
-    ars_operation_seconds: float = 4800.0   # operation quantum per ARS action
+    # An operation quantum is how much of a subsystem's daily capacity one
+    # action buys. It may not exceed step_seconds: the step is the only time
+    # that passes, so a longer quantum lets one decision do more work than the
+    # elapsed time allows. ARS was 4800 s against a 1200 s step -- one command
+    # bought four steps of scrubbing while the world advanced one, inflating
+    # ARS from 1.08x the crew's CO2 output to 4.3x, and making the rule
+    # landscape non-monotonic: co2_high 1.2 beat both 1.0 and 1.5, an artifact
+    # of when the one-shot latch re-armed relative to the failure window
+    # rather than anything about the threshold.
+    #
+    # The design memo classifies this value as シナリオ調整 and states it does
+    # not reproduce an SSOS internal cycle, so nothing physical is lost by
+    # matching the step. Modelling a genuinely long batch would mean occupying
+    # the steps it takes, not compressing them into one.
+    ars_operation_seconds: float = 1200.0   # operation quantum per ARS action
     ogs_operation_seconds: float = 1200.0
     wrs_operation_seconds: float = 1200.0
 
@@ -91,6 +105,20 @@ class PlantSimConfig:
             "wrs_max_feed_l_per_operation",
         ):
             req(getattr(self, name) > 0, f"{name} must be > 0")
+
+        # An action cannot process more time than the step advances. Shorter is
+        # fine -- the machine simply ran for part of the interval.
+        for name in (
+            "ars_operation_seconds",
+            "ogs_operation_seconds",
+            "wrs_operation_seconds",
+        ):
+            req(
+                getattr(self, name) <= self.step_seconds,
+                f"{name} ({getattr(self, name)}) must be <= step_seconds "
+                f"({self.step_seconds}): an action cannot do more work than the "
+                f"elapsed time allows",
+            )
 
         # crew size / activity
         req(isinstance(self.crew_size, int) and self.crew_size >= 0, "crew_size must be int >= 0")
