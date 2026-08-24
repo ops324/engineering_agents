@@ -96,7 +96,17 @@ def gate(
 
 
 def _print_one(result: dict) -> None:
-    typer.echo(f"{result['run_id']}  verdict={result['verdict']}  form={result['form']}  steps={result['steps']}")
+    typer.echo(
+        f"{result['run_id']}  verdict={result['verdict']}  form={result['form']}  "
+        f"coverage={result['coverage']} ({result['checks_run']}/{result['checks_total']})  "
+        f"steps={result['steps']}"
+    )
+    if result["coverage"] == "minimal":
+        typer.echo(
+            "  warning: only presence and non-negativity were checked. This "
+            "backend records no cumulative totals, so nothing here constrains "
+            "conservation, chemistry or capacity."
+        )
     for check in result["checks"]:
         typer.echo(f"  {check['status']:<8} {check['name']:<32} {check['detail']}")
     if result["totals_not_recorded"]:
@@ -112,5 +122,9 @@ def _print_many(results: List[dict]) -> None:
     full = sum(1 for r in results if r["form"] == "full")
     typer.echo(f"{len(results)} runs: {passed} pass, {len(failed)} fail")
     typer.echo(f"  full form: {full}   retroactive form: {len(results) - full}")
+    by_coverage: dict = {}
+    for r in results:
+        by_coverage[r["coverage"]] = by_coverage.get(r["coverage"], 0) + 1
+    typer.echo("  coverage: " + ", ".join(f"{k} {v}" for k, v in sorted(by_coverage.items())))
     for result in failed:
         typer.echo(f"  FAIL {result['run_id']}: {', '.join(result['failed_checks'])}")

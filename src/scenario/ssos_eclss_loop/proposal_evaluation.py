@@ -24,12 +24,18 @@ can lower the bar it is about to be measured against. A real one does:
 inherited bar makes that move worth exactly nothing.
 
 **Replication is required where it is required, and refused where it is not.**
-Measured on this pipeline: ``labeled_rule_base`` is byte-identical run to run,
-so one pair settles it. ``llm`` re-runs of one seed at temperature 0.0 vary
-with CV 26%, and same-seed spread is 0.78x between-seed spread -- the seed
-fixes almost nothing, so pairing on it buys almost nothing either. A single LLM
-pair is an anecdote with two arms, and this module says so rather than
-returning a number that looks like a result.
+``labeled_rule_base`` produces byte-identical *telemetry* run to run (summary
+timestamps and paths differ), so one pair settles it. ``llm`` does not
+reproduce: five runs of one identical config at seed 101, temperature 0.0 gave
+peak CO2 of 2.01-3.49 kg, two ending ``warning`` and three ``critical``.
+
+Whether the seed helps at all is *not* established. Pooled within-seed spread
+is 0.82x between-seed spread (n=5 and n=4 against n=10), but F = 1.48 on (9,7)
+df, p ~ 0.6 -- consistent with the seed fixing nothing and equally consistent
+with it fixing a good deal. The two sets also share two runs. So the honest
+statement is that a single LLM pair cannot separate a proposal from
+run-to-run variation, not that pairing is known to be worthless. This module
+returns the numbers and withholds the label.
 """
 
 from __future__ import annotations
@@ -68,8 +74,11 @@ REPRODUCIBLE_BACKENDS = frozenset({"mock", "plant_sim"})
 #: labeled runs at one seed produce byte-identical telemetry.
 DETERMINISTIC_MODES = frozenset({"none", "labeled_rule_base"})
 
-#: Measured CV of peak_co2 across same-seed llm repeats (n=9, two seeds).
-MEASURED_LLM_CV = 0.26
+#: Observed spread of peak_co2 across same-seed llm repeats: SD/mean = 0.27 on
+#: n=5 at seed 101. Quoted as an order of magnitude, not an estimate -- the 95%
+#: CI on a CV from n=5 runs roughly 16% to 76%, and the underlying outcome is
+#: bimodal rather than a mean with a spread.
+OBSERVED_LLM_SPREAD = 0.27
 
 #: Below this, a stochastic arm gets its numbers reported and no verdict.
 MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT = 3
@@ -240,11 +249,25 @@ def evaluate_proposal(
             "agents_mode=%r is stochastic (measured CV %.0f%%); %d repeat(s) will "
             "produce numbers but no verdict.",
             baseline.agents_mode,
-            MEASURED_LLM_CV * 100,
+            OBSERVED_LLM_SPREAD * 100,
             repeats,
         )
 
     if yardstick is None:
+        # The freeze is only worth something if the baseline's thresholds are
+        # the ones the scenario started with. A baseline that was itself run
+        # with --apply-proposals has already written a previous proposal's
+        # thresholds into its own summary, so freezing them freezes a bar that
+        # has moved -- and this is an iterative design loop, so that is the
+        # normal case, not an edge one.
+        if baseline.summary.get("apply_proposals_path"):
+            raise ProposalEvaluationError(
+                f"{baseline.run_dir.name} was produced with --apply-proposals "
+                f"({baseline.summary['apply_proposals_path']}), so its thresholds "
+                f"are a previous proposal's, not the scenario's. Pass an explicit "
+                f"yardstick -- from_reference_limits() cannot drift, nothing in "
+                f"this repository can edit NASA-STD-3001."
+            )
         # The baseline's own thresholds, frozen here, before either arm runs.
         yardstick = from_frozen_baseline(
             baseline.summary.get("thresholds") or baseline.config.get("thresholds") or {},
@@ -332,8 +355,8 @@ def _verdict(
             "label": "inconclusive",
             "reason": (
                 f"agents_mode is stochastic and {n} repeat(s) cannot separate the "
-                f"proposal from run-to-run variation (measured CV "
-                f"{MEASURED_LLM_CV:.0%})"
+                f"proposal from run-to-run variation (observed spread "
+                f"~{OBSERVED_LLM_SPREAD:.0%} on n=5)"
             ),
         }
     needed = 1 if deterministic else n // 2 + 1

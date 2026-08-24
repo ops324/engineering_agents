@@ -85,8 +85,13 @@ def valid_trajectory():
     """Crew metabolism for one interval, then one ARS operation.
 
     Step 1: 0.1 kg CO2 out, 0.2 kg O2 in, 1.0 L drunk, 0.6 L urine, 0.3 L
-    condensate, 0.1 L unrecoverable. Step 2: ARS removes 0.5 kg from the cabin,
-    captures 0.4, vents 0.1.
+    condensate, 0.1 L unrecoverable. Step 2: ARS removes 0.05 kg from the
+    cabin, captures 0.04, vents 0.01.
+
+    The ARS figure is not arbitrary: rated throughput is 4.50 kg/day, and a
+    step is 1200 s, so 0.0625 kg is the most one step can remove. An earlier
+    draft used 0.5 kg and capacity_bounds caught it — the fixture was eight
+    times over the hardware rating.
     """
     step0 = _record(
         0, cabin=1.0, o2=2.0, product=50.0, grey=0.0, captured=0.0, urine=0.0, totals={}
@@ -110,16 +115,16 @@ def valid_trajectory():
     )
     step2 = _record(
         2,
-        cabin=0.6,
+        cabin=1.05,
         o2=1.8,
         product=49.0,
         grey=0.3,
-        captured=0.4,
+        captured=0.04,
         urine=0.6,
         totals={
             "total_co2_generated_kg": 0.1,
             "total_o2_consumed_kg": 0.2,
-            "total_co2_vented_kg": 0.1,
+            "total_co2_vented_kg": 0.01,
             "total_potable_water_consumed_l": 1.0,
             "total_urine_generated_l": 0.6,
             "total_condensate_generated_l": 0.3,
@@ -147,8 +152,9 @@ def test_a_consistent_trajectory_passes_every_implemented_check(tmp_path):
     assert gate_passed(result)
     assert result["form"] == "full"
     assert result["failed_checks"] == []
-    # Only the check that declares itself unimplemented is skipped.
-    assert result["skipped_checks"] == ["capacity_bounds"]
+    assert result["skipped_checks"] == []
+    assert result["coverage"] == "full"
+    assert result["checks_run"] == result["checks_total"]
 
 
 # --------------------------------------------------------------------------- #
@@ -258,7 +264,7 @@ def test_failure_quiescence_catches_ars_removing_co2_while_down():
     result = check_failure_quiescence(records)
     assert result.status == FAIL
     assert result.violations[0]["subsystem"] == "ars"
-    assert result.violations[0]["co2_removed_kg"] == pytest.approx(0.5)
+    assert result.violations[0]["co2_removed_kg"] == pytest.approx(0.05)
 
 
 def test_failure_quiescence_ignores_a_subsystem_down_at_only_one_end():
@@ -331,6 +337,9 @@ def test_a_run_without_totals_is_not_failed_for_lacking_them(tmp_path):
         "failure_quiescence",
         "capacity_bounds",
     }
+    # Two of nine ran. A verdict that does not say so lets a backend the gate
+    # barely inspected read as verified.
+    assert result["coverage"] == "minimal"
 
 
 def test_the_retroactive_form_still_catches_a_negative_inventory(tmp_path):
