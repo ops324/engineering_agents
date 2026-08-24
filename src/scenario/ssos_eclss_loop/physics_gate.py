@@ -75,13 +75,19 @@ REL_TOL = 1.0e-9
 #: same); anything further negative is a violation.
 CLAMP_EPSILON = 1.0e-9
 
-#: Inventories carried on the snapshot itself.
-SNAPSHOT_INVENTORIES = (
+#: Readings every backend emits. Absent means the trajectory is unusable.
+REQUIRED_READINGS = (
     "co2_storage_kg",
     "o2_storage_kg",
     "product_water_reserve_l",
-    "grey_water_collected_l",
 )
+
+#: Pools only some backends model. ``mock`` carries no grey-water loop and no
+#: ``raw_topics`` at all, so requiring these would fail every mock run for not
+#: recording a quantity it never had -- the same "not recorded reads as
+#: violated" error the retroactive form exists to avoid. Absent means the
+#: ledgers that need them skip; present means they are checked like any other.
+LEDGER_READINGS = ("grey_water_collected_l",)
 
 #: Inventories carried under ``raw_topics.plant_sim``.
 PLANT_INVENTORIES = ("captured_co2_kg", "urine_buffer_l")
@@ -189,7 +195,7 @@ def check_readings_present_and_finite(records: Sequence[Dict[str, Any]]) -> Chec
     violations: List[Dict[str, Any]] = []
     for record in records:
         plant = _plant(record)
-        for name in SNAPSHOT_INVENTORIES:
+        for name in REQUIRED_READINGS:
             value = record.get(name)
             if value is None:
                 violations.append({"step": _step(record), "field": name, "reason": "missing"})
@@ -197,10 +203,15 @@ def check_readings_present_and_finite(records: Sequence[Dict[str, Any]]) -> Chec
                 violations.append(
                     {"step": _step(record), "field": name, "reason": "not finite", "value": value}
                 )
+        # Optional pools are checked for sanity when present and ignored when
+        # the backend does not model them.
+        for name in LEDGER_READINGS:
+            if name in record and not math.isfinite(float(record[name])):
+                violations.append(
+                    {"step": _step(record), "field": name, "reason": "not finite"}
+                )
         for name in PLANT_INVENTORIES:
-            if name not in plant:
-                continue  # not a plant_sim run; the applicability check owns that
-            if not math.isfinite(float(plant[name])):
+            if name in plant and not math.isfinite(float(plant[name])):
                 violations.append(
                     {"step": _step(record), "field": name, "reason": "not finite"}
                 )
@@ -224,7 +235,8 @@ def check_inventories_non_negative(records: Sequence[Dict[str, Any]]) -> CheckRe
     worst_step: Optional[int] = None
     for record in records:
         plant = _plant(record)
-        readings = [(n, record.get(n)) for n in SNAPSHOT_INVENTORIES]
+        readings = [(n, record.get(n)) for n in REQUIRED_READINGS]
+        readings += [(n, record.get(n)) for n in LEDGER_READINGS if n in record]
         readings += [(n, plant.get(n)) for n in PLANT_INVENTORIES if n in plant]
         for name, value in readings:
             if value is None:
@@ -287,9 +299,20 @@ def _ledger_check(
     records: Sequence[Dict[str, Any]],
     needed: Sequence[str],
     residual_at,
+    *,
+    needed_readings: Sequence[str] = (),
 ) -> CheckResult:
-    """Close one species ledger against step 0 at every step."""
-    absent = [field_name for field_name in needed if field_name not in _plant(records[0])]
+    """Close one species ledger against step 0 at every step.
+
+    ``needed`` names plant totals, ``needed_readings`` names snapshot fields.
+    Both are declared rather than discovered so a backend that models fewer
+    pools skips the ledger instead of raising on the first missing key.
+    """
+    base_record = records[0]
+    absent = [field_name for field_name in needed if field_name not in _plant(base_record)]
+    absent += [
+        field_name for field_name in needed_readings if field_name not in base_record
+    ]
     if absent:
         return CheckResult(
             name,
@@ -329,6 +352,7 @@ def _delta(base_plant: Dict[str, Any], plant: Dict[str, Any], name: str) -> floa
 
 
 CARBON_TOTALS = (
+    "captured_co2_kg",
     "total_co2_generated_kg",
     "total_co2_vented_kg",
     "total_sabatier_co2_used_kg",
@@ -349,7 +373,13 @@ def check_carbon_ledger(records: Sequence[Dict[str, Any]]) -> CheckResult:
         )
         return (stored_now - stored_before) - (produced - removed), max(stored_now, produced, 1.0)
 
-    return _ledger_check("carbon_ledger", records, CARBON_TOTALS, residual)
+    return _ledger_check(
+        "carbon_ledger",
+        records,
+        CARBON_TOTALS,
+        residual,
+        needed_readings=("co2_storage_kg",),
+    )
 
 
 OXYGEN_TOTALS = ("total_o2_generated_kg", "total_o2_consumed_kg", "total_o2_delivered_kg")
@@ -364,10 +394,17 @@ def check_oxygen_ledger(records: Sequence[Dict[str, Any]]) -> CheckResult:
         lost = _delta(b, p, "total_o2_consumed_kg") + _delta(b, p, "total_o2_delivered_kg")
         return (stored_now - stored_before) - (gained - lost), max(stored_now, gained, 1.0)
 
-    return _ledger_check("oxygen_ledger", records, OXYGEN_TOTALS, residual)
+    return _ledger_check(
+        "oxygen_ledger",
+        records,
+        OXYGEN_TOTALS,
+        residual,
+        needed_readings=("o2_storage_kg",),
+    )
 
 
 WATER_TOTALS = (
+    "urine_buffer_l",
     "total_potable_water_consumed_l",
     "total_urine_generated_l",
     "total_condensate_generated_l",
@@ -406,7 +443,13 @@ def check_water_ledger(records: Sequence[Dict[str, Any]]) -> CheckResult:
         )
         return (pool_now - pool_before) - (gained - lost), max(pool_now, gained, 1.0)
 
-    return _ledger_check("water_ledger", records, WATER_TOTALS, residual)
+    return _ledger_check(
+        "water_ledger",
+        records,
+        WATER_TOTALS,
+        residual,
+        needed_readings=("product_water_reserve_l", "grey_water_collected_l"),
+    )
 
 
 STOICHIOMETRY_TOTALS = (
