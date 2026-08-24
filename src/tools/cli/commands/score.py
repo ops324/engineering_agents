@@ -90,11 +90,13 @@ def score(
     which is different from scoring badly.
     """
     root = Path(results_root) if results_root else default_results_root()
-    yardstick = _build_yardstick(
-        baseline=baseline, habitat_volume_m3=habitat_volume_m3, root=root
-    )
     run_dir = _resolve_run(run, root)
     try:
+        # Inside the handler: from_frozen_baseline raises NotScorable when the
+        # named baseline has no thresholds, and the contract above promises 4.
+        yardstick = _build_yardstick(
+            baseline=baseline, habitat_volume_m3=habitat_volume_m3, root=root
+        )
         metrics = trajectory_metrics(run_dir, yardstick, require_gate=not no_gate)
     except (NotScorable, TelemetryUnreadable) as exc:
         print_error(str(exc))
@@ -107,8 +109,15 @@ def score(
         raise typer.Exit(exit_codes.SUCCESS)
 
     co2 = metrics["co2"]
+    if band and band not in co2["bands"]:
+        # Printing nothing and exiting 0 reads as "nothing above threshold".
+        print_error(
+            f"unknown band {band!r}",
+            hint=f"this yardstick has: {', '.join(co2['bands'])}",
+        )
+        raise typer.Exit(exit_codes.USER_ERROR)
     typer.echo(
-        f"{metrics['run_id']}  samples={metrics['samples']}  "
+        f"{metrics['run_id']}  steps={metrics['steps']}  "
         f"yardstick={metrics['yardstick']['source']}"
     )
     typer.echo(f"  peak {co2['peak_kg']:.4g} kg   terminal {co2['terminal_kg']:.4g} kg")
@@ -155,6 +164,12 @@ def evaluate(
         if habitat_volume_m3 is not None
         else None
     )
+    # Checked before either arm runs: an unknown band otherwise raises KeyError
+    # after both simulations have already been paid for.
+    known = {b.name for b in yardstick.bands} if yardstick is not None else None
+    if known is not None and band not in known:
+        print_error(f"unknown band {band!r}", hint=f"available: {', '.join(sorted(known))}")
+        raise typer.Exit(exit_codes.USER_ERROR)
     try:
         result = evaluate_proposal(
             run_dir,

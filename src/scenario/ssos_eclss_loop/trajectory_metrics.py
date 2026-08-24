@@ -142,17 +142,49 @@ def from_frozen_baseline(thresholds: Dict[str, Any], *, baseline_run_id: str) ->
 
 
 def _cabin_co2(run_dir: Path) -> List[float]:
+    """One sample per step, taken from the pre-ops row.
+
+    ``scenario_run`` appends a second ``post_ops: true`` telemetry row for a
+    step, but *only* when the team issued at least one command. Scoring the
+    raw file therefore counts rows rather than steps, and the row count is a
+    function of how often the agents acted -- so a proposal that changes agent
+    chattiness moves ``steps_above``, ``exposure_integral`` and
+    ``longest_streak`` with the physical trajectory untouched. On a 40-step run
+    that produced ``longest_streak = 53``, a value the run is not long enough
+    to hold.
+
+    The pre-ops row is the one taken for every step whether or not anyone
+    acted, so selecting it makes the sample count a property of the run length
+    alone. Taking "the last row per step" would also give one row per step, but
+    a *different* row on active steps than on quiet ones -- reintroducing the
+    same dependence in a form harder to see.
+
+    Both rows sit at the same simulated instant, so the post-ops refresh is
+    dropped rather than averaged in: it is a second look at one step, not a
+    second step.
+    """
     path = Path(run_dir) / "telemetry.jsonl"
     if not path.is_file():
         raise NotScorable(f"{path} does not exist")
-    series = [
-        json.loads(line)["co2_storage_kg"]
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    series: List[float] = []
+    seen_steps = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record.get("post_ops"):
+            continue
+        step = record.get("step")
+        if step in seen_steps:
+            # Not a shape this pipeline emits; refuse rather than double-count.
+            raise NotScorable(
+                f"{path} has more than one pre-ops row for step {step}"
+            )
+        seen_steps.add(step)
+        series.append(float(record["co2_storage_kg"]))
     if not series:
         raise NotScorable(f"{path} carries no samples")
-    return [float(v) for v in series]
+    return series
 
 
 def _band_metrics(series: Sequence[float], threshold: float) -> Dict[str, Any]:
@@ -213,7 +245,7 @@ def trajectory_metrics(
         "schema_version": SCHEMA_VERSION,
         "run_dir": str(run_dir),
         "run_id": run_dir.name,
-        "samples": len(series),
+        "steps": len(series),
         "yardstick": yardstick.to_dict(),
         "physics_gate": {"verdict": gate["verdict"], "form": gate["form"]} if gate else None,
         "co2": {

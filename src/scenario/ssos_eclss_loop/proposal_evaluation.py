@@ -37,7 +37,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import math
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,7 +76,10 @@ MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT = 3
 
 #: Metrics compared between arms. Each is read off the trajectory under the
 #: held yardstick, so none of them can be improved by moving a threshold.
-LOWER_IS_BETTER = ("steps_above", "exposure_integral_kg_steps", "longest_streak")
+#: ``peak_kg`` is band-independent and was computed but never compared. Without
+#: it, a spike to 31 kg and a plateau at 3 kg tie on every other figure: same
+#: steps above, same integral, same streak, same terminal margin.
+LOWER_IS_BETTER = ("steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg")
 HIGHER_IS_BETTER = ("terminal_margin_kg",)
 
 
@@ -203,7 +205,13 @@ def _run_arm(
 
 
 def _band_figures(metrics: Dict[str, Any], band: str) -> Dict[str, float]:
-    stats = metrics["co2"]["bands"][band]
+    bands = metrics["co2"]["bands"]
+    if band not in bands:
+        raise ProposalEvaluationError(
+            f"unknown band {band!r}; this yardstick has {', '.join(bands)}"
+        )
+    stats = dict(bands[band])
+    stats["peak_kg"] = metrics["co2"]["peak_kg"]
     return {name: float(stats[name]) for name in LOWER_IS_BETTER + HIGHER_IS_BETTER}
 
 

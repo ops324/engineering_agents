@@ -59,6 +59,7 @@ from environment.ssos.eclss.plant_sim.stoichiometry import (
     CH4_PER_H2,
     CO2_PER_H2,
     H2O_PER_H2,
+    H2_PER_O2,
     WATER_PER_O2,
 )
 from environment.ssos.eclss.units import WATER_DENSITY_KG_PER_L
@@ -115,6 +116,20 @@ CUMULATIVE_TOTALS = (
     "total_product_water_delivered_l",
     "total_external_grey_water_submitted_l",
 )
+
+def _finite(value: Any) -> bool:
+    """Whether a reading is a finite number.
+
+    A reading that is not a number at all -- a string, a dict, a bool -- is a
+    corrupt reading, which is exactly what this gate is for. Letting float()
+    raise would turn it into a CLI traceback with exit 1, indistinguishable
+    from a broken invocation, which is the confusion GATE_FAILED_EXIT exists
+    to prevent.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(float(value))
+
 
 PASS = "pass"
 FAIL = "fail"
@@ -199,19 +214,19 @@ def check_readings_present_and_finite(records: Sequence[Dict[str, Any]]) -> Chec
             value = record.get(name)
             if value is None:
                 violations.append({"step": _step(record), "field": name, "reason": "missing"})
-            elif not math.isfinite(float(value)):
+            elif not _finite(value):
                 violations.append(
                     {"step": _step(record), "field": name, "reason": "not finite", "value": value}
                 )
         # Optional pools are checked for sanity when present and ignored when
         # the backend does not model them.
         for name in LEDGER_READINGS:
-            if name in record and not math.isfinite(float(record[name])):
+            if name in record and not _finite(record[name]):
                 violations.append(
                     {"step": _step(record), "field": name, "reason": "not finite"}
                 )
         for name in PLANT_INVENTORIES:
-            if name in plant and not math.isfinite(float(plant[name])):
+            if name in plant and not _finite(plant[name]):
                 violations.append(
                     {"step": _step(record), "field": name, "reason": "not finite"}
                 )
@@ -239,7 +254,9 @@ def check_inventories_non_negative(records: Sequence[Dict[str, Any]]) -> CheckRe
         readings += [(n, record.get(n)) for n in LEDGER_READINGS if n in record]
         readings += [(n, plant.get(n)) for n in PLANT_INVENTORIES if n in plant]
         for name, value in readings:
-            if value is None:
+            if not _finite(value):
+                # Already condemned by readings_present_and_finite; comparing a
+                # string here would crash the gate instead of failing the run.
                 continue
             value = float(value)
             if value < -CLAMP_EPSILON:
@@ -272,7 +289,7 @@ def check_totals_monotonic(records: Sequence[Dict[str, Any]]) -> CheckResult:
         prev_plant, curr_plant = _plant(previous), _plant(current)
         for name in present:
             before, after = prev_plant.get(name), curr_plant.get(name)
-            if before is None or after is None:
+            if not _finite(before) or not _finite(after):
                 continue
             delta = float(after) - float(before)
             if delta < -(ABS_TOL + REL_TOL * abs(float(before))):
@@ -324,7 +341,14 @@ def _ledger_check(
     worst_step: Optional[int] = None
     violations: List[Dict[str, Any]] = []
     for record in records:
-        residual, scale = residual_at(base, record)
+        try:
+            residual, scale = residual_at(base, record)
+        except (TypeError, ValueError, KeyError):
+            # A reading that is not a number is condemned by
+            # readings_present_and_finite already. A ledger is a statement
+            # about arithmetic and has nothing to say about a corrupt row --
+            # raising here would turn a failed run into a crashed CLI.
+            continue
         if abs(residual) > abs(worst):
             worst, worst_step = residual, _step(record)
         if not _close_enough(residual, scale):
@@ -453,6 +477,7 @@ def check_water_ledger(records: Sequence[Dict[str, Any]]) -> CheckResult:
 
 
 STOICHIOMETRY_TOTALS = (
+    "total_h2_vented_kg",
     "total_electrolysis_water_kg",
     "total_o2_generated_kg",
     "total_sabatier_co2_used_kg",
@@ -494,6 +519,17 @@ def check_stoichiometric_residual(records: Sequence[Dict[str, Any]]) -> CheckRes
             float(last["total_ch4_vented_kg"]),
             co2_used * (CH4_PER_H2 / CO2_PER_H2),
         ),
+        # Hydrogen closes the set. Without it the other three can all hold
+        # while H2 is invented or destroyed: electrolysis makes
+        # o2_generated * H2_PER_O2 of it, Sabatier consumes
+        # sabatier_co2_used / CO2_PER_H2, and whatever is left is vented.
+        # A run claiming 1000 kg of H2 vented from 0.2 kg of O2 used to pass
+        # while the check reported "3 identities hold".
+        (
+            "hydrogen balance",
+            float(last["total_h2_vented_kg"]) + co2_used / CO2_PER_H2,
+            o2_generated * H2_PER_O2,
+        ),
     )
     violations: List[Dict[str, Any]] = []
     worst = 0.0
@@ -517,7 +553,7 @@ def check_stoichiometric_residual(records: Sequence[Dict[str, Any]]) -> CheckRes
     return CheckResult(
         "stoichiometric_residual",
         PASS,
-        f"3 identities hold (worst residual {worst:.3e})",
+        f"{len(identities)} identities hold (worst residual {worst:.3e})",
         worst_residual=worst,
     )
 
@@ -558,6 +594,10 @@ def check_failure_quiescence(records: Sequence[Dict[str, Any]]) -> CheckResult:
     for previous, current in zip(records, records[1:]):
         b, p = _plant(previous), _plant(current)
         step = _step(current)
+        if not _finite(previous.get("co2_storage_kg")) or not _finite(
+            current.get("co2_storage_kg")
+        ):
+            continue  # corrupt rows belong to readings_present_and_finite
         if previous.get("ars_failure_enabled") and current.get("ars_failure_enabled"):
             intervals += 1
             produced = _delta(b, p, "total_co2_generated_kg")
