@@ -34,6 +34,17 @@ BASE_OVERRIDES = {
 }
 
 
+#: Within rated ARS throughput. The shipped proposer emits 2.25 (1.25x the
+#: reference goal), which buys super-rated scrubbing -- see
+#: test_a_proposal_that_buys_super_rated_capacity_is_refused.
+WITHIN_CAPACITY = [
+    {"change_kind": "set_parameter",
+     "payload": {"target": "agents.policy.co2_storage_high_kg", "value": 1.35}},
+    {"change_kind": "set_parameter",
+     "payload": {"target": "thresholds.co2_storage_high_kg", "value": 1.35}},
+]
+
+
 @pytest.fixture
 def baseline(tmp_path):
     """A real rule-arm run, proposals and all. 0.08 s, so no need to fake it."""
@@ -47,7 +58,11 @@ def baseline(tmp_path):
         )
     )
     assert result.exit_code == 0, result.error
-    return Path(result.run_dir)
+    run_dir = Path(result.run_dir)
+    # The shipped proposal exceeds rated ARS; tests about everything *else*
+    # start from one that does not, so a capacity refusal cannot mask them.
+    _replace_proposal(run_dir, WITHIN_CAPACITY)
+    return run_dir
 
 
 def _replace_proposal(run_dir: Path, changes):
@@ -196,7 +211,7 @@ def test_threshold_only_targets_are_named_for_the_reader(tmp_path, baseline):
          "payload": {"target": "thresholds.co2_storage_high_kg", "value": 1.1}},
         {"change_kind": "action_profile",
          "payload": {"subsystem": "ars", "action": "air_revitalisation",
-                     "fields": {"initial_co2_mass": 2.0}}},
+                     "fields": {"initial_co2_mass": 1.5}}},
     ])
     ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="lbl")
     assert ev["yardstick_changes"] == ["thresholds.co2_storage_high_kg"]
@@ -216,3 +231,20 @@ def test_yardstick_changes_ignores_non_threshold_targets():
         {"change_kind": "set_parameter",
          "payload": {"target": "agents.policy.co2_storage_high_kg", "value": 1.0}},
     ]}) == []
+
+
+def test_a_proposal_that_buys_super_rated_capacity_is_refused(tmp_path, baseline):
+    """PlantModel scales ARS removal by goal/reference with no ceiling, so an
+    action_profile proposal can ask for throughput the hardware does not have.
+    The gate catches it and the arm is refused rather than credited.
+
+    The proposal the shipped labeled proposer emits (initial_co2_mass 2.25,
+    1.25x the reference) is already over the line.
+    """
+    _replace_proposal(baseline, [
+        {"change_kind": "action_profile",
+         "payload": {"subsystem": "ars", "action": "air_revitalisation",
+                     "fields": {"initial_co2_mass": 1800.0}}},
+    ])
+    with pytest.raises(ProposalEvaluationError, match="capacity_bounds"):
+        evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="over")

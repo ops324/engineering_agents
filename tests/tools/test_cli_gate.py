@@ -26,6 +26,7 @@ def test_gate_exits_zero_on_a_consistent_run(tmp_path):
     result = runner.invoke(app, ["gate", str(_run_dir(tmp_path, valid_trajectory()))])
     assert result.exit_code == 0
     assert "verdict=pass" in result.stdout
+    assert "coverage=" in result.stdout
 
 
 def test_gate_exit_code_separates_a_void_run_from_a_broken_command(tmp_path):

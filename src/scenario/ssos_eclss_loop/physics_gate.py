@@ -637,13 +637,143 @@ def check_failure_quiescence(records: Sequence[Dict[str, Any]]) -> CheckResult:
     )
 
 
+#: Rated daily throughputs. These are hardware specification (the design memo
+#: classifies both as SSOS参照), and no proposal can reach them:
+#: ALLOWED_SET_PARAMETER_TARGETS covers only thresholds.* and agents.policy.*,
+#: so plant_sim.* is out of reach. That is what makes them safe to check
+#: against -- a bound an agent can raise is not a bound.
+RATED_ARS_KG_DAY = 4.50
+RATED_OGS_O2_KG_DAY = 9.25
+
+#: The multiple of rated throughput above which no reading of the numbers can
+#: defend a run.
+#:
+#: Deliberately not the real ceiling, because nobody has set one. The model has
+#: **no ceiling at all**: ``run_ars`` computes
+#: ``max_removable = operation_capacity * (goal / reference)``, so the goal sets
+#: the rate and a large enough goal buys arbitrary throughput. The shipped
+#: labeled policy already depends on that -- its critical-band branch
+#: multiplies the goal by 1.5 -- so a bound of 1.0 would void the repository's
+#: own default policy, and picking 1.5 instead would be choosing a constant to
+#: make the current tests pass, which is the move decision 90 exists to forbid.
+#:
+#: So the check fails only on excursions no interpretation survives (an audit
+#: bought 1000x through an action_profile proposal and had it scored as an
+#: improvement), and *always reports the observed ratio* so the number that
+#: settles the real ceiling comes from data rather than from convenience.
+#: Whether 4.50 kg/day is a maximum or a rate-at-nominal is a question for
+#: whoever owns the ECLSS model; when it is answered, this constant is the
+#: whole change.
+GROSS_EXCESS_MULTIPLE = 10.0
+
+CAPACITY_TOTALS = (
+    "simulation_time_s",
+    "captured_co2_kg",
+    "total_co2_vented_kg",
+    "total_sabatier_co2_used_kg",
+    "total_co2_delivered_kg",
+    "total_o2_generated_kg",
+)
+
+
 def check_capacity_bounds(records: Sequence[Dict[str, Any]]) -> CheckResult:
-    """Declared, not implemented -- named so the gate's coverage is legible."""
+    """No subsystem may process more than its rated throughput in elapsed time.
+
+    Bounded cumulatively against ``simulation_time_s`` rather than per action,
+    because telemetry keeps totals and not the goal each command carried. That
+    is the stronger form anyway: it holds however the work was divided up.
+
+    The goal scale is deliberately *not* in the bound. ``run_ars`` computes
+    ``max_removable = operation_capacity * (goal / reference)``, and the goal is
+    reachable by an ``action_profile`` proposal -- so folding it in would let a
+    proposal raise the ceiling it is being checked against. An audit did
+    exactly that: ``initial_co2_mass: 1800`` bought 1000x the rated ARS, passed
+    the gate in full form, and was reported as an improvement.
+
+    ARS removal is reconstructed as everything that left the cabin: what sits
+    in the capture tank now, plus what was vented, consumed by Sabatier, or
+    handed out as a service.
+    """
+    absent = [name for name in CAPACITY_TOTALS if name not in _plant(records[0])]
+    if absent:
+        return CheckResult(
+            "capacity_bounds",
+            SKIPPED,
+            "trajectory predates the cumulative totals; missing " + ", ".join(absent),
+        )
+    violations: List[Dict[str, Any]] = []
+    peak_ratio: Dict[str, float] = {}
+    worst = 0.0
+    worst_step: Optional[int] = None
+    # Grouped by step, not by row. A cumulative bound over the whole run is
+    # defeated by the cabin itself -- removal is min(cabin inventory,
+    # capacity x scale), so however large the goal, a run can only take out
+    # what the crew put in. The audit's 1000x goal surfaced as 24x rated
+    # *within one step* while the run-long total looked ordinary.
+    #
+    # Row pairs are the wrong unit too: the operation happens between a step's
+    # pre-ops and post-ops rows, and those two share a clock reading, so an
+    # elapsed-time filter skips exactly the intervals where work was done.
+    times = sorted({float(_plant(r)["simulation_time_s"]) for r in records
+                    if _finite(_plant(r).get("simulation_time_s"))})
+    gaps = [b - a for a, b in zip(times, times[1:]) if b > a]
+    if not gaps:
+        return CheckResult(
+            "capacity_bounds", SKIPPED, "trajectory has no elapsed simulated time"
+        )
+    step_days = min(gaps) / 86400.0
+
+    by_step: Dict[Any, List[Dict[str, Any]]] = {}
+    for record in records:
+        by_step.setdefault(_step(record), []).append(_plant(record))
+    for step in sorted(by_step, key=lambda k: (k is None, k)):
+        rows = by_step[step]
+        first, last = rows[0], rows[-1]
+        removed = (
+            _delta(first, last, "captured_co2_kg")
+            + _delta(first, last, "total_co2_vented_kg")
+            + _delta(first, last, "total_sabatier_co2_used_kg")
+            + _delta(first, last, "total_co2_delivered_kg")
+        )
+        generated = _delta(first, last, "total_o2_generated_kg")
+        for label, actual, rated in (
+            ("ars", removed, RATED_ARS_KG_DAY * step_days),
+            ("ogs", generated, RATED_OGS_O2_KG_DAY * step_days),
+        ):
+            if rated <= 0:
+                continue
+            ratio = actual / rated
+            peak_ratio[label] = max(peak_ratio.get(label, 0.0), ratio)
+            if ratio > GROSS_EXCESS_MULTIPLE:
+                if ratio > worst:
+                    worst, worst_step = ratio, step
+                violations.append(
+                    {
+                        "step": step,
+                        "subsystem": label,
+                        "processed": round(actual, 6),
+                        "rated": round(rated, 6),
+                        "ratio": round(ratio, 3),
+                    }
+                )
+    observed = ", ".join(f"{k} {v:.2f}x" for k, v in sorted(peak_ratio.items()))
+    if violations:
+        return CheckResult(
+            "capacity_bounds",
+            FAIL,
+            f"{len(violations)} sample(s) above {GROSS_EXCESS_MULTIPLE:g}x rated "
+            f"throughput (peak {observed})",
+            worst_residual=worst,
+            worst_step=worst_step,
+            violations=violations,
+        )
     return CheckResult(
+        # The ratio is reported on a pass too: it is the measurement that will
+        # settle the real ceiling, and it is only useful if it is always there.
         "capacity_bounds",
-        SKIPPED,
-        "per-operation limits need the goal each command carried; telemetry "
-        "retains totals, not goals",
+        PASS,
+        f"peak throughput {observed or 'n/a'} of rated "
+        f"(fails only above {GROSS_EXCESS_MULTIPLE:g}x; the real ceiling is unset)",
     )
 
 
@@ -668,8 +798,17 @@ def evaluate_physics_gate(run_dir: Path) -> Dict[str, Any]:
     statuses = [r.status for r in results]
     verdict = FAIL if FAIL in statuses else PASS
     absent = missing_totals(records)
+    ran = sum(1 for r in results if r.status != SKIPPED)
+    # "pass" with two checks run and seven skipped is not the same statement as
+    # "pass" with nine run, and a verdict that does not distinguish them lets a
+    # backend the gate barely inspected read as verified. The mock backend
+    # emits no raw_topics at all, so it lands here on every single run.
+    coverage = "full" if ran == len(results) else ("minimal" if ran <= 2 else "partial")
     return {
         "schema_version": SCHEMA_VERSION,
+        "coverage": coverage,
+        "checks_run": ran,
+        "checks_total": len(results),
         "run_dir": str(run_dir),
         "run_id": run_dir.name,
         "verdict": verdict,
