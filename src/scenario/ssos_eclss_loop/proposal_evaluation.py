@@ -239,7 +239,7 @@ def evaluate_proposal(
     seeds: Optional[Sequence[int]] = None,
     results_root: Optional[Path] = None,
     run_id_prefix: Optional[str] = None,
-    band: str = "critical",
+    band: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run control and treated, and report the difference under a held bar."""
     baseline = load_baseline(Path(baseline_run_dir))
@@ -273,6 +273,13 @@ def evaluate_proposal(
             baseline.summary.get("thresholds") or baseline.config.get("thresholds") or {},
             baseline_run_id=baseline.run_dir.name,
         )
+
+    # The most stringent band of whichever yardstick is in use. Band names are
+    # a property of the yardstick -- "critical" exists on a frozen baseline,
+    # "ppCO2 nominal (1-hour average)" on the standard -- so a hardcoded
+    # default only works for one of them.
+    if band is None:
+        band = yardstick.bands[0].name
 
     prefix = run_id_prefix or f"eval__{baseline.run_dir.name}"
     if seeds is None:
