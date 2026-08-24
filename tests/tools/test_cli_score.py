@@ -118,3 +118,54 @@ def test_evaluate_refuses_a_baseline_with_no_proposal(tmp_path, run_dir):
     (run_dir / "design_proposals.json").write_text(json.dumps(payload), encoding="utf-8")
     result = runner.invoke(app, ["evaluate", str(run_dir), "--results-root", str(tmp_path)])
     assert result.exit_code == NOT_SCORABLE_EXIT
+
+
+# --------------------------------------------------------------------------- #
+# the documented exit contract, which the first cut did not keep
+# --------------------------------------------------------------------------- #
+def test_score_exits_four_when_the_named_baseline_has_no_thresholds(tmp_path, run_dir):
+    """from_frozen_baseline raises NotScorable; the call used to sit outside
+    the handler and surfaced as a traceback with exit 1."""
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (bare / "summary.json").write_text(json.dumps({"scenario": "ssos_eclss_loop"}), encoding="utf-8")
+    result = runner.invoke(app, ["score", str(run_dir), "--baseline", str(bare)])
+    assert result.exit_code == NOT_SCORABLE_EXIT
+
+
+def test_score_rejects_an_unknown_band_instead_of_printing_nothing(tmp_path, run_dir):
+    """Exiting 0 with no rows reads as 'nothing above threshold'."""
+    result = runner.invoke(
+        app, ["score", str(run_dir), "--baseline", str(run_dir), "--band", "nope"]
+    )
+    assert result.exit_code == 2
+    assert "unknown band" in result.output
+
+
+def test_evaluate_rejects_an_unknown_band_before_paying_for_the_runs(tmp_path, run_dir):
+    result = runner.invoke(
+        app,
+        ["evaluate", str(run_dir), "--results-root", str(tmp_path),
+         "--habitat-volume", "61.3", "--band", "nope"],
+    )
+    assert result.exit_code == 2
+    assert "unknown band" in result.output
+
+
+def test_gate_fails_a_corrupt_reading_rather_than_crashing(tmp_path, run_dir):
+    """A non-numeric reading is exactly what readings_present_and_finite is
+    for; float() used to raise and exit 1, which is the CLI-broken code."""
+    from tools.cli.commands.gate import GATE_FAILED_EXIT
+
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "telemetry.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    rows[1]["co2_storage_kg"] = "NaN-ish"
+    (run_dir / "telemetry.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["gate", str(run_dir)])
+    assert result.exit_code == GATE_FAILED_EXIT
+    assert "readings_present_and_finite" in result.output

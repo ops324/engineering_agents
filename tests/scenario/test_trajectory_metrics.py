@@ -181,3 +181,70 @@ def test_terminal_margin_is_positive_when_there_is_headroom(tmp_path):
     assert band["terminal_margin_kg"] == pytest.approx(2.2 - 1.2)
     over = _scored(tmp_path, [1.0, 1.0, 3.0], "over")["co2"]["bands"]["critical"]
     assert over["terminal_margin_kg"] < 0
+
+
+# --------------------------------------------------------------------------- #
+# one sample per step, whatever the agents did
+# --------------------------------------------------------------------------- #
+def _with_post_ops(tmp_path, pairs, name="run"):
+    """pairs: (step, cabin_kg, post_ops_kg_or_None) — the shape scenario_run emits."""
+    records = []
+    for step, pre, post in pairs:
+        base = json.loads(json.dumps(valid_trajectory()[0]))
+        base["step"] = step
+        base["co2_storage_kg"] = pre
+        records.append(base)
+        if post is not None:
+            after = json.loads(json.dumps(base))
+            after["post_ops"] = True
+            after["co2_storage_kg"] = post
+            records.append(after)
+    return _write(tmp_path / name, records)
+
+
+def test_the_post_ops_refresh_is_a_second_look_not_a_second_step(tmp_path):
+    """scenario_run appends a post_ops row only on steps where the team acted.
+    Counting rows makes the metric a function of how chatty the agents were."""
+    quiet = _with_post_ops(tmp_path, [(0, 3.0, None), (1, 3.0, None)], "quiet")
+    busy = _with_post_ops(tmp_path, [(0, 3.0, 3.0), (1, 3.0, 3.0)], "busy")
+    q = trajectory_metrics(quiet, YARD, require_gate=False)
+    b = trajectory_metrics(busy, YARD, require_gate=False)
+    assert q["steps"] == b["steps"] == 2
+    assert (
+        q["co2"]["bands"]["critical"]["steps_above"]
+        == b["co2"]["bands"]["critical"]["steps_above"]
+        == 2
+    )
+    assert (
+        q["co2"]["bands"]["critical"]["exposure_integral_kg_steps"]
+        == b["co2"]["bands"]["critical"]["exposure_integral_kg_steps"]
+    )
+
+
+def test_a_streak_can_never_exceed_the_run_length(tmp_path):
+    """A 40-step run once reported longest_streak = 53."""
+    run_dir = _with_post_ops(tmp_path, [(s, 3.0, 3.0) for s in range(5)])
+    m = trajectory_metrics(run_dir, YARD, require_gate=False)
+    assert m["steps"] == 5
+    for stats in m["co2"]["bands"].values():
+        assert stats["longest_streak"] <= m["steps"]
+
+
+def test_the_pre_ops_reading_is_the_one_scored(tmp_path):
+    """Not the post-ops refresh: the pre-ops row exists for every step, so the
+    sample count depends on run length alone."""
+    run_dir = _with_post_ops(tmp_path, [(0, 3.0, 1.0), (1, 3.0, 1.0)], "mixed")
+    m = trajectory_metrics(run_dir, YARD, require_gate=False)
+    assert m["co2"]["peak_kg"] == 3.0
+    assert m["co2"]["terminal_kg"] == 3.0
+    assert m["co2"]["bands"]["critical"]["steps_above"] == 2
+
+
+def test_a_duplicated_pre_ops_row_is_refused_not_double_counted(tmp_path):
+    records = [json.loads(json.dumps(valid_trajectory()[0])) for _ in range(2)]
+    for r in records:
+        r["step"] = 0
+        r["co2_storage_kg"] = 3.0
+    run_dir = _write(tmp_path / "dupe", records)
+    with pytest.raises(NotScorable, match="more than one pre-ops row"):
+        trajectory_metrics(run_dir, YARD, require_gate=False)
