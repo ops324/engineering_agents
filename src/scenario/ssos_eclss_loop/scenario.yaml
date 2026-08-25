@@ -41,7 +41,7 @@ plant_sim:
     ogs_operation_seconds: 1200  # [s] OGS action quantum
     wrs_operation_seconds: 1200  # [s] reserved; WRS feed cap is max_feed_l_per_operation
   crew:
-    size: 50  # [person] occupant N; must match agents.yaml actor.team.count when actors run
+    size: 4  # [person] occupant N; must match agents.yaml actor.team.count when actors run
     activity_factor: 1.0  # [-] scales all crew rates (1=nominal, 4=exercise, 0.7=sleep)
     co2_kg_day_person: 1.04  # [kg/day/person] BVAD CO2 generated
     o2_kg_day_person: 0.84  # [kg/day/person] BVAD O2 demanded

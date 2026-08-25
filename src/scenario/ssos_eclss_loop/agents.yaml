@@ -2,7 +2,7 @@
 
 actor:
   team:
-    count: 50  # [person] actor N; must match scenario.yaml plant_sim.crew.size for plant_sim
+    count: 4  # [person] actor N; must match scenario.yaml plant_sim.crew.size for plant_sim
     id_prefix: eclss_actor  # ids are eclss_actor_1 .. N
     persona: |
       SSOS ECLSS actor. Read storage telemetry (/co2_storage, /o2_storage);
@@ -19,6 +19,9 @@ actor:
   # messages (~52 with count 50 and 2 action reps). 22 is a vLLM prompt budget
   # (less than one full 50-person step) so actors can still cite recent
   # teammates (same-step deliberation is still simultaneous).
+  # EXP-009 took the crew to 4, so one step now emits ~6 messages and 22 spans
+  # roughly 3.7 steps instead of part of one. Left as it was -- it only binds
+  # the llm arm, and changing two things at once buys an uninterpretable run.
   discourse_window: 22  # [-] recent utterances visible to each actor
   # policy: labeled_rule_base operational profiles only (llm does not read these).
   # Storage-band triggers come from scenario.yaml thresholds at run time — do not duplicate them here.
