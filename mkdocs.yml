@@ -4,6 +4,7 @@ docs_dir: docs
 exclude_docs: |
   ja/memo/ssos_eclss_loop/e2e_records/
   en/memo/ssos_eclss_loop/e2e_records/
+  ja/memo/experiments/
 theme:
   name: material
   palette:
