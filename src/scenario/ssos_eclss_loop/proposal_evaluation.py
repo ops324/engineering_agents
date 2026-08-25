@@ -53,6 +53,7 @@ import yaml
 from scenario.jobs.executor import execute_run
 from scenario.jobs.spec import RunSpec
 from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
+from scenario.ssos_eclss_loop.survival_replay import replay_survival
 from scenario.ssos_eclss_loop.trajectory_metrics import (
     NotScorable,
     Yardstick,
@@ -89,7 +90,19 @@ MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT = 3
 #: it, a spike to 31 kg and a plateau at 3 kg tie on every other figure: same
 #: steps above, same integral, same streak, same terminal margin.
 LOWER_IS_BETTER = ("steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg")
-HIGHER_IS_BETTER = ("terminal_margin_kg",)
+#: ``crew_remaining_frozen`` is the occupant count this trajectory would have
+#: kept under the *baseline's* bands, not the count the run reported. The run's
+#: own figure is unusable for comparison: attrition fires on the same
+#: thresholds.* keys a proposal may move, so raising an alarm above the
+#: trajectory deletes the deaths it caused (EXP-010). Present only when the
+#: baseline enabled survival and recorded a crew.
+HIGHER_IS_BETTER = ("terminal_margin_kg", "crew_remaining_frozen")
+
+#: The figures ``_band_figures`` reads off one band of the yardstick.
+#: ``crew_remaining_frozen`` is graded like these and carries a direction like
+#: these, but it comes from replaying the dwell policy, not from the band, so
+#: it is not looked for here.
+BAND_FIGURES = LOWER_IS_BETTER + ("terminal_margin_kg",)
 
 
 class ProposalEvaluationError(RuntimeError):
@@ -221,7 +234,7 @@ def _band_figures(metrics: Dict[str, Any], band: str) -> Dict[str, float]:
         )
     stats = dict(bands[band])
     stats["peak_kg"] = metrics["co2"]["peak_kg"]
-    return {name: float(stats[name]) for name in LOWER_IS_BETTER + HIGHER_IS_BETTER}
+    return {name: float(stats[name]) for name in BAND_FIGURES}
 
 
 def _summarise(values: Sequence[float]) -> Dict[str, float]:
@@ -281,6 +294,24 @@ def evaluate_proposal(
     if band is None:
         band = yardstick.bands[0].name
 
+    # Occupants are graded on the baseline's bands for the same reason the CO2
+    # figures are, and with more at stake: the run's own crew_remaining is
+    # computed under whatever thresholds were live in that arm, so a proposal
+    # that raises an alarm above the trajectory reports a crew it killed as
+    # alive (EXP-010). Absent -- and then simply not compared -- when the
+    # baseline ran no occupants.
+    frozen_crew: Optional[Dict[str, Any]] = None
+    survival_cfg = dict((baseline.config.get("plant_sim") or {}).get("survival") or {})
+    crew_initial = baseline.summary.get("crew_initial")
+    if survival_cfg.get("enabled") and crew_initial is not None:
+        frozen_crew = {
+            "thresholds": (
+                baseline.summary.get("thresholds") or baseline.config.get("thresholds") or {}
+            ),
+            "survival": survival_cfg,
+            "crew_initial": int(crew_initial),
+        }
+
     prefix = run_id_prefix or f"eval__{baseline.run_dir.name}"
     if seeds is None:
         base_seed = baseline.summary.get("seed")
@@ -300,6 +331,17 @@ def evaluate_proposal(
         control = trajectory_metrics(control_dir, yardstick)
         treated = trajectory_metrics(treated_dir, yardstick)
         c_fig, t_fig = _band_figures(control, band), _band_figures(treated, band)
+        if frozen_crew is not None:
+            for run_dir, figures in ((control_dir, c_fig), (treated_dir, t_fig)):
+                figures["crew_remaining_frozen"] = float(
+                    replay_survival(
+                        run_dir,
+                        frozen_crew["thresholds"],
+                        frozen_crew["survival"],
+                        crew_initial=frozen_crew["crew_initial"],
+                        bands_from=baseline.run_dir.name,
+                    )["crew_remaining"]
+                )
         pairs.append({
             "repeat": index + 1,
             "seed": seed,
@@ -310,6 +352,10 @@ def evaluate_proposal(
 
     aggregate: Dict[str, Any] = {}
     for metric in LOWER_IS_BETTER + HIGHER_IS_BETTER:
+        # crew_remaining_frozen is absent on backends without occupant
+        # survival; a missing metric is not compared rather than defaulted.
+        if metric not in pairs[0]["delta"]:
+            continue
         deltas = [p["delta"][metric] for p in pairs]
         direction = -1 if metric in LOWER_IS_BETTER else 1
         improved = sum(1 for d in deltas if d * direction > 0)

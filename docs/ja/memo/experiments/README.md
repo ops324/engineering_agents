@@ -43,7 +43,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-007](EXP-007-trunk-operating-point.md) | trunk の運用点を測り直す | confirmed |
 | [EXP-008](EXP-008-rescore-existing-runs.md) | 既存 run の再採点 | confirmed |
 | [EXP-009](EXP-009-crew-four.md) | 乗員を装置定格に合わせる（v3） | confirmed（予測6件中5件的中） |
-| [EXP-010](EXP-010-crew-axis-is-not-guarded.md) | 提案が乗員残存を操作できる | **confirmed（未修正）** |
+| [EXP-010](EXP-010-crew-axis-is-not-guarded.md) | 提案が乗員残存を操作できる | confirmed（案1で緩和） |
 
 ## データの所在
 

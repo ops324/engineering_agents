@@ -144,6 +144,47 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
     assert ev["pairs"][0]["treated"]["steps_above"] > 0
 
 
+def test_a_proposal_cannot_bank_the_deaths_it_deleted(tmp_path, baseline):
+    """EXP-010, pinned: attrition is graded on the baseline's bands.
+
+    Occupants die from dwelling in a health band, and the band edges are the
+    same thresholds.* keys a proposal may move. Raise the alarm above the
+    trajectory and the run reports "safe" for every reading: the dwell counter
+    never advances, and the run's own crew_remaining reports occupants it
+    killed as alive, while the air is measurably worse.
+
+    The frozen-bar defence that protects the CO2 figures cannot reach this --
+    attrition happens inside the run, not at scoring time -- so the comparison
+    replays the dwell policy over each arm's recorded trajectory under the
+    baseline's bands. Both readings are asserted here: what the runs claim
+    about themselves, and what the held bands say they did.
+    """
+    baseline_summary = json.loads(
+        (baseline / "summary.json").read_text(encoding="utf-8")
+    )
+    own_bar = round(float(baseline_summary["peak_co2_storage_kg"]) * 2.0, 3)
+    _replace_proposal(baseline, [
+        {"change_kind": "set_parameter",
+         "payload": {"target": "thresholds.co2_storage_high_kg", "value": own_bar}},
+    ])
+    ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="hide")
+
+    def reported_crew(key: str) -> int:
+        run_dir = Path(ev["pairs"][0][key]["run_dir"])
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+        return int(summary["crew_remaining"])
+
+    # What the runs say about themselves: the proposal saved a life.
+    assert reported_crew("treated") > reported_crew("control")
+
+    # What they did. The air got worse ...
+    assert ev["aggregate"]["peak_kg"]["delta"]["mean"] > 0
+    # ... and counted on the bands the proposal did not set, it saved nobody.
+    assert "crew_remaining_frozen" in ev["aggregate"]
+    assert ev["aggregate"]["crew_remaining_frozen"]["delta"]["mean"] <= 0
+    assert ev["aggregate"]["crew_remaining_frozen"]["improved"] == 0
+
+
 def test_a_proposal_that_changes_no_behaviour_changes_no_metric(tmp_path, baseline):
     """The guard must not manufacture differences either: a target the labeled
     policy does not read leaves both arms identical."""

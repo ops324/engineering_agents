@@ -7,7 +7,7 @@ git_commit:    5308208（乗員4、世代 v3）
 branch:        experiment/eclss-evaluation-layer
 config:        plant_sim / 30 step / inject_failures true / labeled_rule_base / seed 101
 result:        下記
-status:        confirmed
+status:        confirmed（案1で緩和。案2は未着手）
 ```
 
 ## 経緯
@@ -73,9 +73,46 @@ steps_above / exposure_integral_kg_steps / longest_streak / peak_kg / terminal_m
 
 **1 と 3 の組み合わせが最小に見えるが、決めていない。** どれもシナリオまたは評価層の設計判断。
 
+## 塞いだもの（案1、2026-08-26）
+
+`src/scenario/ssos_eclss_loop/survival_replay.py` を追加。**軌跡を固定したまま、凍結した帯で帯滞在を再適用する。**
+
+検証（`~/ea-runs/2026-08-26-v3-crew4/yardstick-crew-hole/`）:
+
+```
+                その run 自身の帯で再計算   run が報告する値   凍結帯で再計算
+baseline                    3 人      =        3 人
+control                     3 人      =        3 人              3 人
+treated                     4 人      =        4 人              3 人  ← 減員が復活
+```
+
+**自分の帯を当てれば実際の run を完全に再現する**（3/3/4 とも一致）ので、再計算の仕組み自体が信用できる。
+
+`evaluate_proposal` の比較指標に `crew_remaining_frozen` を追加（`HIGHER_IS_BETTER`）。実際の出力:
+
+```
+verdict: worse - 0 metric(s) improved, 3 worsened
+  exposure_integral_kg_steps  +4.733   worsened 1
+  peak_kg                     +0.597   worsened 1
+  terminal_margin_kg          -0.717   worsened 1
+  crew_remaining_frozen       +0.000   improved 0   ← 「1人救った」が消えた
+  control  run 報告 3 人 / 凍結帯 3 人
+  treated  run 報告 4 人 / 凍結帯 3 人
+```
+
+回帰テスト `test_a_proposal_cannot_bank_the_deaths_it_deleted` で、**欺瞞（run 報告 4 > 3）と防御（凍結帯で improved 0）の両方**を固定した。
+
+### 案1の限界（設計上のもので、バグではない）
+
+- **反実仮想である。** 軌跡を固定して帯だけ差し替えるので、「実際にその帯で走らせた場合」とは一致しない
+  （減員は CO2 生成と O2 消費を下げるフィードバックを持つ。EXP-009 で予測を外した機構と同じ）。
+  **2つの腕を1つの物差しで比べるための量**であって、予測ではない
+- **物理下限（`apply_capacity_drop`）は再現していない。** telemetry が step ごとの look-ahead 在庫を持たないため。
+  乗員4では物理下限が一度も発火していないので今回の測定には影響しない
+
 ## 未解決
 
-- **この穴を固定するテストがまだ無い。** 塞ぎ方を決めてから書く
+- **案2（サバイバル帯を運用トリガーと別キーにする）は未着手。** 本家の設計判断を覆すのでチームの合意が要る。案1は評価層側の緩和であって、`summary.json` の `crew_remaining` は依然として run 自身の閾値で計算されたままである
 - 同じ経路が O2・水にもあるか**未確認**。機構上は同じはず（帯を外せば滞在カウンタが動かない。O2 の場合は
   `o2_storage_low_kg` を**下げる**と WARNING に入らなくなり、同時に OGS の発火も遅れて物理は悪化する）。
   ただし乗員4では O2 帯滞在による減員がそもそも起きない（EXP-009 の死因は `co2_warning` のみ、min O2 5.97 kg）ので、
