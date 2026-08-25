@@ -41,6 +41,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-005](EXP-005-habitat-volume.md) | 居住区容積の選定 | **invalidated**（選定根拠のみ。一次資料は有効） |
 | [EXP-006](EXP-006-independent-audit.md) | 独立監査 | confirmed |
 | [EXP-007](EXP-007-trunk-operating-point.md) | trunk の運用点を測り直す | confirmed |
+| [EXP-008](EXP-008-rescore-existing-runs.md) | 既存 run の再採点 | confirmed |
 
 ## データの所在
 
