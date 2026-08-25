@@ -664,6 +664,12 @@ def test_ssos_eclss_loop_plant_sim_writes_thresholds_and_metabolism(tmp_path: Pa
         overrides={
             "backend": {"kind": "plant_sim"},
             **_ssos_agents("labeled_rule_base", count=50),
+            # Pin the occupant count too. This test asserts crew_initial == 50
+            # and pinned only the actor side, so it was reading the crew from
+            # whatever scenario.yaml happened to ship -- and broke the moment
+            # the experimental condition moved. Occupants and actors are the
+            # same people; a test that fixes one has to fix the other.
+            "plant_sim": {"crew": {"size": 50}},
             "simulation": {"steps": 3},
         },
         recreate_output=True,

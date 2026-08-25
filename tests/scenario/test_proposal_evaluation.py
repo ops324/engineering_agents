@@ -94,6 +94,12 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
     that is depends on the operating point. A literal 9.0 demonstrated the
     hazard while the crew was four; at crew 50 the cabin passes 9 kg unaided
     and the literal stopped demonstrating anything.
+
+    The band moved is ``co2_storage_high_kg``, the one this operating point
+    actually enters. ``co2_storage_critical_kg`` ships at 8.0 kg, which four
+    occupants cannot reach inside a run -- 116 steps of generation with no
+    removal at all -- so raising it changes nothing and the evaluation rightly
+    answers "no_effect". A demonstration needs a threshold the run crosses.
     """
     baseline_summary = json.loads(
         (baseline / "summary.json").read_text(encoding="utf-8")
@@ -102,10 +108,10 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
 
     _replace_proposal(baseline, [
         {"change_kind": "set_parameter",
-         "payload": {"target": "thresholds.co2_storage_critical_kg", "value": own_bar}},
+         "payload": {"target": "thresholds.co2_storage_high_kg", "value": own_bar}},
     ])
     ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="raise")
-    assert ev["yardstick_changes"] == ["thresholds.co2_storage_critical_kg"]
+    assert ev["yardstick_changes"] == ["thresholds.co2_storage_high_kg"]
 
     # Held bar: the proposal is judged by what it did to the plant.
     assert ev["verdict"]["label"] == "worse"
@@ -126,15 +132,15 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
         treated_dir,
         from_frozen_baseline(
             {
-                "co2_storage_high_kg": baseline_summary["thresholds"][
-                    "co2_storage_high_kg"
+                "co2_storage_high_kg": own_bar,
+                "co2_storage_critical_kg": baseline_summary["thresholds"][
+                    "co2_storage_critical_kg"
                 ],
-                "co2_storage_critical_kg": own_bar,
             },
             baseline_run_id="its-own",
         ),
     )
-    assert self_scored["co2"]["bands"]["critical"]["steps_above"] == 0
+    assert self_scored["co2"]["bands"]["high"]["steps_above"] == 0
     assert ev["pairs"][0]["treated"]["steps_above"] > 0
 
 
