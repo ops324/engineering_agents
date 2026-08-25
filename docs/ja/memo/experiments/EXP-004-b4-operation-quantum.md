@@ -10,6 +10,9 @@ seed:          101
 status:        confirmed（ただし本家の現行コードで再確認が必要 — EXP-000）
 ```
 
+> **2026-08-25 追記: 採用判断（A）は無効。** 測定自体は乗員4人で有効だが、trunk（乗員50）では ARS は
+> 既に3倍不足で、A を当てると全腕が即死して分解能が消える。→ [EXP-007](EXP-007-trunk-operating-point.md)
+
 ## 発見
 
 `ars_operation_seconds = 4800` に対し `step_seconds = 1200`。**1回の判断で4倍の時間分の

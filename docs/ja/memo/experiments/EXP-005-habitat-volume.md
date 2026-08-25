@@ -9,6 +9,9 @@ result:        388 m³ を採用
 status:        confirmed（モデリング判断。実測モジュールではない）
 ```
 
+> **2026-08-25 追記: 388 m³ の選定根拠は trunk では成立しない。** 閾値 1.5/2.2 に合わせた値であり、
+> trunk の 2.0/8.0 では critical が 8.6 mmHg。一次資料と換算方法は有効。→ [EXP-007](EXP-007-trunk-operating-point.md)
+
 ## 問題
 
 NASA-STD-3001 [V2 6004] は **1時間平均 ppCO₂ ≤ 3 mmHg**（mmHg = 分圧）。

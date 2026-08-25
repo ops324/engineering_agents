@@ -36,12 +36,17 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-000](EXP-000-stale-base.md) | 土台が古かった | invalidated（他の実験への影響） |
 | [EXP-001](EXP-001-noise-floor.md) | LLM腕のノイズ床 | confirmed |
 | [EXP-002](EXP-002-determinism.md) | 直列化による決定性 | **rejected** |
-| [EXP-003](EXP-003-rule-arm-characterisation.md) | ルール腕の特性把握 | 要再検証 |
-| [EXP-004](EXP-004-b4-operation-quantum.md) | B4 時間量子の選択肢比較 | confirmed |
-| [EXP-005](EXP-005-habitat-volume.md) | 居住区容積の選定 | confirmed |
+| [EXP-003](EXP-003-rule-arm-characterisation.md) | ルール腕の特性把握 | **invalidated**（EXP-007） |
+| [EXP-004](EXP-004-b4-operation-quantum.md) | B4 時間量子の選択肢比較 | **invalidated**（採用判断のみ。測定は有効） |
+| [EXP-005](EXP-005-habitat-volume.md) | 居住区容積の選定 | **invalidated**（選定根拠のみ。一次資料は有効） |
 | [EXP-006](EXP-006-independent-audit.md) | 独立監査 | confirmed |
+| [EXP-007](EXP-007-trunk-operating-point.md) | trunk の運用点を測り直す | confirmed |
 
 ## データの所在
 
-生データは GitHub に入れない（フロー §10）。要約は `~/ea-runs/2026-08-24-evidence/`（5.2 MB、866 run分の summary + 有効config + 監査レポート）。
-`README.md` に各ファイルがどの主張を支えるかの対応表がある。
+生データは GitHub に入れない（フロー §10）。要約の所在:
+
+- `~/ea-runs/2026-08-24-evidence/`（5.2 MB、866 run分の summary + 有効config + 監査レポート）— **世代 v1: 乗員4人・survival 無し**
+- `~/ea-runs/2026-08-25-trunk-baseline/`（8.6 MB、48 run + 再現スクリプト）— **世代 v2: trunk d5616389、乗員50・survival 有効**
+
+どちらも `README.md` に各ファイルがどの主張を支えるかの対応表がある。**両世代の run を同じ表に並べない**（EXP-007）。
