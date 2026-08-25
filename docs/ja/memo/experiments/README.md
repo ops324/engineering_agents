@@ -42,6 +42,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-006](EXP-006-independent-audit.md) | 独立監査 | confirmed |
 | [EXP-007](EXP-007-trunk-operating-point.md) | trunk の運用点を測り直す | confirmed |
 | [EXP-008](EXP-008-rescore-existing-runs.md) | 既存 run の再採点 | confirmed |
+| [EXP-009](EXP-009-crew-four.md) | 乗員を装置定格に合わせる（v3） | confirmed（予測6件中5件的中） |
 
 ## データの所在
 
