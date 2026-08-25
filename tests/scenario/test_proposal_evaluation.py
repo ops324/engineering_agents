@@ -80,17 +80,29 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
     """The hazard, demonstrated on one pair of runs.
 
     thresholds.* is doubly purposed: it is the alarm the rule acts on *and* the
-    bar health scoring reads. Raising co2_storage_critical_kg to 9.0 stops the
-    escalated ARS from ever firing, so the physics gets worse -- while making
-    the same trajectory look spotless to anything scoring against 9.0.
+    bar health scoring reads. Raising co2_storage_critical_kg above the
+    trajectory stops the escalated ARS from ever firing, so the physics gets
+    worse -- while making the same trajectory look spotless to anything scoring
+    against the raised bar.
 
     Graded on the baseline's frozen bar, the verdict follows the physics.
     Graded on the treated run's own bar, the identical trajectory scores zero
     exposure. Both are computed here so the difference is not a claim.
+
+    The raised value is derived from the baseline run, not written down here: a
+    bar is only a hiding place while it sits above the trajectory, and how high
+    that is depends on the operating point. A literal 9.0 demonstrated the
+    hazard while the crew was four; at crew 50 the cabin passes 9 kg unaided
+    and the literal stopped demonstrating anything.
     """
+    baseline_summary = json.loads(
+        (baseline / "summary.json").read_text(encoding="utf-8")
+    )
+    own_bar = round(float(baseline_summary["peak_co2_storage_kg"]) * 2.0, 3)
+
     _replace_proposal(baseline, [
         {"change_kind": "set_parameter",
-         "payload": {"target": "thresholds.co2_storage_critical_kg", "value": 9.0}},
+         "payload": {"target": "thresholds.co2_storage_critical_kg", "value": own_bar}},
     ])
     ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="raise")
     assert ev["yardstick_changes"] == ["thresholds.co2_storage_critical_kg"]
@@ -99,12 +111,26 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
     assert ev["verdict"]["label"] == "worse"
     assert ev["aggregate"]["exposure_integral_kg_steps"]["delta"]["mean"] > 0
 
-    # Its own bar: the very same trajectory, scored against 9.0, is spotless.
+    # Its own bar: the very same trajectory, scored against the raised value,
+    # is spotless.
     treated_dir = Path(ev["pairs"][0]["treated"]["run_dir"])
+    treated_summary = json.loads(
+        (treated_dir / "summary.json").read_text(encoding="utf-8")
+    )
+    treated_peak = float(treated_summary["peak_co2_storage_kg"])
+    assert treated_peak < own_bar, (
+        f"the raised bar {own_bar} kg is not above the treated trajectory "
+        f"(peak {treated_peak} kg); the hazard needs a bar the run cannot cross"
+    )
     self_scored = trajectory_metrics(
         treated_dir,
         from_frozen_baseline(
-            {"co2_storage_high_kg": 1.5, "co2_storage_critical_kg": 9.0},
+            {
+                "co2_storage_high_kg": baseline_summary["thresholds"][
+                    "co2_storage_high_kg"
+                ],
+                "co2_storage_critical_kg": own_bar,
+            },
             baseline_run_id="its-own",
         ),
     )
