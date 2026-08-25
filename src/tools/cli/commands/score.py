@@ -21,6 +21,7 @@ from scenario.ssos_eclss_loop.reference_limits import (
     ppco2_mmhg,
 )
 from scenario.ssos_eclss_loop.trajectory_metrics import (
+    inventory_metrics,
     NotScorable,
     Yardstick,
     from_frozen_baseline,
@@ -157,9 +158,48 @@ def score(
             f"terminal margin {stats['terminal_margin_kg']:+.4g} kg\n"
             f"    from {stats['origin']}"
         )
+    # O2 and water carry no standard here, and saying only that leaves the two
+    # axes invisible -- EXP-011 produced a run with the best cabin CO2 of ten
+    # and the fewest survivors, three taken by O2 dwell while this section read
+    # "not scored". The figures below are against the run's own survival bands,
+    # which is a house measure and not a compliance claim.
     for axis, reason in metrics["not_scored"].items():
-        typer.echo(f"  not scored: {axis} — {reason}")
+        typer.echo(f"  not scored against a standard: {axis} — {reason}")
+    bands = _survival_bands(run_dir)
+    if bands:
+        try:
+            inventory = inventory_metrics(run_dir, bands)
+        except (NotScorable, TelemetryUnreadable, KeyError):
+            inventory = None
+        if inventory is not None:
+            o2, water = inventory["o2"], inventory["water"]
+            typer.echo(
+                "  against the run's own survival bands (house measure, not a standard):\n"
+                f"    o2    low {o2['band_low_kg']:.4g} kg   min {o2['min_kg']:.4g} kg"
+                f"   steps below {o2['steps_below']:<4} longest {o2['longest_streak_below']:<4}"
+                f" deficit {o2['deficit_integral']:.4g} kg*steps\n"
+                f"    water low {water['band_low_l']:.4g} L   min {water['min_l']:.4g} L"
+                f"   steps below {water['steps_below']:<4} longest {water['longest_streak_below']:<4}"
+                f" deficit {water['deficit_integral']:.4g} L*steps"
+            )
     raise typer.Exit(exit_codes.SUCCESS)
+
+
+def _survival_bands(run_dir: Path) -> Optional[dict]:
+    """The edges attrition read, from the run's own summary.
+
+    ``survival_bands`` since they were split from the operational alarms;
+    ``thresholds`` for runs recorded before that, where the two were one thing.
+    """
+    path = Path(run_dir) / "summary.json"
+    if not path.is_file():
+        return None
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    bands = summary.get("survival_bands") or summary.get("thresholds")
+    return dict(bands) if isinstance(bands, dict) else None
 
 
 def evaluate(

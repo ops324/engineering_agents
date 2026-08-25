@@ -58,7 +58,12 @@ def test_score_against_a_frozen_baseline(tmp_path, run_dir):
     result = runner.invoke(app, ["score", str(run_dir), "--baseline", str(run_dir)])
     assert result.exit_code == 0
     assert "yardstick=frozen-baseline" in result.output
-    assert "not scored: o2" in result.output
+    # Named as unscorable against a standard, and still reported: leaving the
+    # axis out entirely is how a run with the best CO2 and the worst survival
+    # reads as the best run (EXP-011).
+    assert "not scored against a standard: o2" in result.output
+    assert "o2    low" in result.output
+    assert "water low" in result.output
 
 
 def test_score_against_the_standard_needs_a_habitat(tmp_path, run_dir):

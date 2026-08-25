@@ -141,7 +141,7 @@ def from_frozen_baseline(thresholds: Dict[str, Any], *, baseline_run_id: str) ->
     )
 
 
-def _cabin_co2(run_dir: Path) -> List[float]:
+def _pre_ops_series(run_dir: Path, field: str) -> List[float]:
     """One sample per step, taken from the pre-ops row.
 
     ``scenario_run`` appends a second ``post_ops: true`` telemetry row for a
@@ -181,10 +181,40 @@ def _cabin_co2(run_dir: Path) -> List[float]:
                 f"{path} has more than one pre-ops row for step {step}"
             )
         seen_steps.add(step)
-        series.append(float(record["co2_storage_kg"]))
+        series.append(float(record[field]))
     if not series:
         raise NotScorable(f"{path} carries no samples")
     return series
+
+
+def _cabin_co2(run_dir: Path) -> List[float]:
+    return _pre_ops_series(run_dir, "co2_storage_kg")
+
+
+def _below_band(series: Sequence[float], threshold: float) -> Dict[str, Any]:
+    """The same two axes as ``_band_metrics``, for a quantity that runs out.
+
+    CO2 is scored above a ceiling; O2 and water are scored below a floor. The
+    deficit integral is the mirror of the exposure integral: a shallow, long
+    shortfall and a deep, brief one are different failures.
+    """
+    steps_below = 0
+    deficit = 0.0
+    longest = current = 0
+    for value in series:
+        if value <= threshold:
+            steps_below += 1
+            deficit += threshold - value
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return {
+        "steps_below": steps_below,
+        "fraction_below": round(steps_below / len(series), 6),
+        "deficit_integral": round(deficit, 6),
+        "longest_streak_below": longest,
+    }
 
 
 def _band_metrics(series: Sequence[float], threshold: float) -> Dict[str, Any]:
@@ -254,6 +284,46 @@ def trajectory_metrics(
             "bands": bands,
         },
         "not_scored": dict(NOT_SCORED),
+    }
+
+
+def inventory_metrics(run_dir: Path, bands: Dict[str, Any]) -> Dict[str, Any]:
+    """Depth and duration on the two axes no standard can score here.
+
+    ``reference_limits`` records O2 and water as named gaps: plant_sim models
+    O2 as a supply inventory rather than cabin atmosphere, so there is no
+    partial pressure to take, and product water is an inventory too. That is a
+    reason not to claim compliance with [V2 6003]. It is not a reason to leave
+    the axes out of a comparison -- EXP-011 produced a run with the best cabin
+    CO2 of ten and the fewest survivors, three of whom O2 dwell took.
+
+    Scored against ``bands``, which is where those deaths come from, and which
+    the caller is expected to freeze from the baseline for the same reason the
+    CO2 yardstick is frozen.
+    """
+    run_dir = Path(run_dir)
+    o2 = _pre_ops_series(run_dir, "o2_storage_kg")
+    water = _pre_ops_series(run_dir, "product_water_reserve_l")
+    o2_low = float(bands["o2_storage_low_kg"])
+    water_low = float(bands["product_water_low_l"])
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_dir.name,
+        "steps": len(o2),
+        "scored_against": "survival bands, frozen by the caller",
+        "not_a_standard": dict(NOT_SCORED),
+        "o2": {
+            "band_low_kg": round(o2_low, 6),
+            "min_kg": round(min(o2), 6),
+            "terminal_kg": round(o2[-1], 6),
+            **_below_band(o2, o2_low),
+        },
+        "water": {
+            "band_low_l": round(water_low, 6),
+            "min_l": round(min(water), 6),
+            "terminal_l": round(water[-1], 6),
+            **_below_band(water, water_low),
+        },
     }
 
 

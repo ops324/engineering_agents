@@ -56,6 +56,7 @@ from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_pa
 from scenario.ssos_eclss_loop.survival import resolve_survival_bands
 from scenario.ssos_eclss_loop.survival_replay import replay_survival
 from scenario.ssos_eclss_loop.trajectory_metrics import (
+    inventory_metrics,
     NotScorable,
     Yardstick,
     from_frozen_baseline,
@@ -90,20 +91,31 @@ MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT = 3
 #: ``peak_kg`` is band-independent and was computed but never compared. Without
 #: it, a spike to 31 kg and a plateau at 3 kg tie on every other figure: same
 #: steps above, same integral, same streak, same terminal margin.
-LOWER_IS_BETTER = ("steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg")
+#: ``o2_steps_below`` joins these because CO2 alone can rank a run backwards:
+#: EXP-011's best cabin CO2 of ten runs was also its worst survival, three
+#: occupants taken by O2 dwell while the air stayed clean. O2 and water carry no
+#: standard here -- reference_limits records both as named gaps -- so they are
+#: scored against the frozen survival bands, which is where the deaths come from.
+LOWER_IS_BETTER = (
+    "steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg",
+    "o2_steps_below",
+)
 #: ``crew_remaining_frozen`` is the occupant count this trajectory would have
 #: kept under the *baseline's* bands, not the count the run reported. The run's
 #: own figure is unusable for comparison: attrition fires on the same
 #: thresholds.* keys a proposal may move, so raising an alarm above the
 #: trajectory deletes the deaths it caused (EXP-010). Present only when the
 #: baseline enabled survival and recorded a crew.
-HIGHER_IS_BETTER = ("terminal_margin_kg", "crew_remaining_frozen")
+HIGHER_IS_BETTER = ("terminal_margin_kg", "crew_remaining_frozen", "o2_min_kg", "water_min_l")
 
 #: The figures ``_band_figures`` reads off one band of the yardstick.
 #: ``crew_remaining_frozen`` is graded like these and carries a direction like
 #: these, but it comes from replaying the dwell policy, not from the band, so
 #: it is not looked for here.
-BAND_FIGURES = LOWER_IS_BETTER + ("terminal_margin_kg",)
+BAND_FIGURES = (
+    "steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg",
+    "terminal_margin_kg",
+)
 
 
 class ProposalEvaluationError(RuntimeError):
@@ -301,23 +313,25 @@ def evaluate_proposal(
     # that raises an alarm above the trajectory reports a crew it killed as
     # alive (EXP-010). Absent -- and then simply not compared -- when the
     # baseline ran no occupants.
+    # The bands attrition read, which are no longer the operational alarms: a
+    # run records both, and scoring against the alarms would count shortfalls
+    # on edges that never took anyone. Frozen from the baseline, like the CO2
+    # yardstick, so the treated arm cannot be graded on edges it moved.
+    frozen_bands: Dict[str, Any] = dict(
+        baseline.summary.get("survival_bands")
+        or resolve_survival_bands(
+            baseline.config.get("plant_sim"),
+            baseline.summary.get("thresholds") or baseline.config.get("thresholds") or {},
+        )
+    )
+    inventory_scorable = {"o2_storage_low_kg", "product_water_low_l"} <= set(frozen_bands)
+
     frozen_crew: Optional[Dict[str, Any]] = None
     survival_cfg = dict((baseline.config.get("plant_sim") or {}).get("survival") or {})
     crew_initial = baseline.summary.get("crew_initial")
     if survival_cfg.get("enabled") and crew_initial is not None:
         frozen_crew = {
-            # The bands attrition read, which are no longer the operational
-            # alarms: a run records both, and replaying against the alarms
-            # would count deaths on edges that never took anyone.
-            "thresholds": (
-                baseline.summary.get("survival_bands")
-                or resolve_survival_bands(
-                    baseline.config.get("plant_sim"),
-                    baseline.summary.get("thresholds")
-                    or baseline.config.get("thresholds")
-                    or {},
-                )
-            ),
+            "thresholds": frozen_bands,
             "survival": survival_cfg,
             "crew_initial": int(crew_initial),
         }
@@ -341,8 +355,13 @@ def evaluate_proposal(
         control = trajectory_metrics(control_dir, yardstick)
         treated = trajectory_metrics(treated_dir, yardstick)
         c_fig, t_fig = _band_figures(control, band), _band_figures(treated, band)
-        if frozen_crew is not None:
-            for run_dir, figures in ((control_dir, c_fig), (treated_dir, t_fig)):
+        for run_dir, figures in ((control_dir, c_fig), (treated_dir, t_fig)):
+            if inventory_scorable:
+                inventory = inventory_metrics(run_dir, frozen_bands)
+                figures["o2_min_kg"] = float(inventory["o2"]["min_kg"])
+                figures["o2_steps_below"] = float(inventory["o2"]["steps_below"])
+                figures["water_min_l"] = float(inventory["water"]["min_l"])
+            if frozen_crew is not None:
                 figures["crew_remaining_frozen"] = float(
                     replay_survival(
                         run_dir,
