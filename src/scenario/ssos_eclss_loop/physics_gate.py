@@ -64,7 +64,7 @@ from environment.ssos.eclss.plant_sim.stoichiometry import (
 )
 from environment.ssos.eclss.units import WATER_DENSITY_KG_PER_L
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"  # 0.2.0: "steps" counts steps, not telemetry rows; "readings" added
 
 #: Absolute and relative slack for a ledger residual. Fifty steps of double
 #: precision accumulate error near 1e-12 relative; this is loose enough not to
@@ -193,6 +193,11 @@ def _step(record: Dict[str, Any]) -> int:
     return int(record.get("step", -1))
 
 
+def _steps_seen(records: Sequence[Dict[str, Any]]) -> set:
+    """Distinct step indices, ignoring rows that carry no step."""
+    return {_step(record) for record in records} - {-1}
+
+
 def _close_enough(residual: float, scale: float) -> bool:
     return abs(residual) <= ABS_TOL + REL_TOL * abs(scale)
 
@@ -240,7 +245,7 @@ def check_readings_present_and_finite(records: Sequence[Dict[str, Any]]) -> Chec
     return CheckResult(
         "readings_present_and_finite",
         PASS,
-        f"{len(records)} steps carry every required reading, all finite",
+        f"{len(records)} readings carry every required reading, all finite",
     )
 
 
@@ -812,7 +817,13 @@ def evaluate_physics_gate(run_dir: Path) -> Dict[str, Any]:
         "run_dir": str(run_dir),
         "run_id": run_dir.name,
         "verdict": verdict,
-        "steps": len(records),
+        # A plant_sim step writes two rows, pre-ops and post-ops, so the row
+        # count is twice the step count and calling it "steps" reported a
+        # 50-step run as 100. No check reads this -- the ones that care group
+        # by step themselves -- but a report that miscounts what it looked at
+        # is not one to hand to anybody.
+        "steps": len(_steps_seen(records)) or len(records),
+        "readings": len(records),
         "form": "retroactive" if absent else "full",
         "totals_not_recorded": absent,
         "tolerance": {"abs": ABS_TOL, "rel": REL_TOL, "clamp_epsilon": CLAMP_EPSILON},
