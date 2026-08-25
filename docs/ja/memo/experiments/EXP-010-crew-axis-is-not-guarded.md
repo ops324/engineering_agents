@@ -7,7 +7,7 @@ git_commit:    5308208（乗員4、世代 v3）
 branch:        experiment/eclss-evaluation-layer
 config:        plant_sim / 30 step / inject_failures true / labeled_rule_base / seed 101
 result:        下記
-status:        confirmed（案1で緩和。案2は未着手）
+status:        confirmed（案1で緩和 → 案2で発生源を封鎖）
 ```
 
 ## 経緯
@@ -110,9 +110,49 @@ verdict: worse - 0 metric(s) improved, 3 worsened
 - **物理下限（`apply_capacity_drop`）は再現していない。** telemetry が step ごとの look-ahead 在庫を持たないため。
   乗員4では物理下限が一度も発火していないので今回の測定には影響しない
 
+## 塞いだもの（案2、2026-08-26）— 発生源
+
+`plant_sim.survival.bands` を新設し、**帯滞在が読む境界を運用トリガーから分離した**。
+`ALLOWED_SET_PARAMETER_TARGETS` は `thresholds.*` と `agents.*policy.*` だけなので、
+**提案はこのブロックに触れられない**。省略時は `thresholds` にフォールバックする（従来動作）。
+
+`scenario.yaml` には現行値と同じ6つを明示的に書いた。**同じ数字を二度書くのは意図的**で、
+片方（警報）は提案が動かせ、もう片方（生死の境界）は動かせない。
+
+実測（同じ提案: `co2_storage_high_kg` 2.0 → 4.76）:
+
+```
+          警報    バンド   peak CO2    run が報告する乗員   凍結帯
+control    2.0     2.0     2.380 kg        3 人            3 人
+treated   4.76     2.0     2.760 kg        3 人            3 人
+```
+
+**警報だけが動き、生死の境界は動かない。** 乗員は control と同じ 3 人で、
+「1人救った」という報告そのものが**発生しなくなった**（案1は事後に打ち消す仕組みだった）。
+
+### 既存 run との比較可能性
+
+**既定値では挙動が1ビットも変わらない。** EXP-009 の4条件を分離前後で再実行し、
+`peak` `crew_remaining` `crew_lost_by_cause` `min_o2` `final_co2` が **4/4 で完全一致**することを確認した。
+世代は切れない。
+
+### 波及（記録しておくべきこと）
+
+**`thresholds` を振っても、もう誰が死ぬかは変わらない。** 閾値スイープは
+「運用者の警報設定が結果を変えるか」を測る実験になり、生死の境界は固定される。
+これは実験としてはむしろ健全だが、EXP-007 の48 run スイープ（`o2_low` と `co2_high` を振った）とは
+**測っているものが違う**。既存テスト1件がこれで落ち、バンドを明示するよう修正した
+（`test_plant_sim_skips_physics_floor_on_final_step`）。
+
+### チームへ
+
+`occupant_survival.md` は「運用トリガーとサバイバル帯は**同じ YAML キー**」と明示的に選択している。
+**この枝はそれを分離した**。乗員4と同じ扱いで、意図的なローカルの選択として記録し、結果とともに提案する。
+
 ## 未解決
 
-- **案2（サバイバル帯を運用トリガーと別キーにする）は未着手。** 本家の設計判断を覆すのでチームの合意が要る。案1は評価層側の緩和であって、`summary.json` の `crew_remaining` は依然として run 自身の閾値で計算されたままである
+- **案2 はこの枝で実装したが、本家には提案していない。** `occupant_survival.md` の明示的な設計判断を覆すため
+- 同じ経路が O2・水にもあるかは**依然として未確認**。ただし案2 により、どの軸でも提案からは触れられなくなった
 - 同じ経路が O2・水にもあるか**未確認**。機構上は同じはず（帯を外せば滞在カウンタが動かない。O2 の場合は
   `o2_storage_low_kg` を**下げる**と WARNING に入らなくなり、同時に OGS の発火も遅れて物理は悪化する）。
   ただし乗員4では O2 帯滞在による減員がそもそも起きない（EXP-009 の死因は `co2_warning` のみ、min O2 5.97 kg）ので、

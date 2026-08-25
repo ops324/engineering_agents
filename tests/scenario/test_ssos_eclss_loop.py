@@ -835,8 +835,17 @@ def test_plant_sim_skips_physics_floor_on_final_step(tmp_path: Path):
             "initial_co2_storage_kg": 0.5,
         },
         # Keep 0.02 kg O2 out of WARNING/CRITICAL so only the physics floor can cut crew.
+        # Attrition reads plant_sim.survival.bands, not thresholds -- they are separate
+        # so that a proposal cannot move the edge that kills (EXP-010) -- so a test that
+        # wants a band out of the way has to move the band.
         "thresholds": {"o2_storage_low_kg": 0.01, "o2_storage_critical_kg": 0.005},
-        "plant_sim": {"crew": {"size": 4}, "survival": {"enabled": True}},
+        "plant_sim": {
+            "crew": {"size": 4},
+            "survival": {
+                "enabled": True,
+                "bands": {"o2_storage_low_kg": 0.01, "o2_storage_critical_kg": 0.005},
+            },
+        },
     }
     one = run_scenario(
         "ssos_eclss_loop",

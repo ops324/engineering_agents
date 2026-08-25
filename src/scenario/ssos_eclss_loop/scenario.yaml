@@ -63,6 +63,21 @@ plant_sim:
     max_feed_l_per_operation: 10.0  # [L] urine + grey batch cap per WRS action
   survival:
     enabled: true  # plant_sim only; sensitivity sweep leaves this false
+    # Band edges attrition reads. Same numbers as `thresholds` above, on
+    # purpose -- an operator's alarm and the edge of a lethal band describe one
+    # physical situation. They are written twice because `thresholds.*` is in
+    # ALLOWED_SET_PARAMETER_TARGETS and this block is not: a proposal that
+    # raised co2_storage_high_kg above the trajectory used to stop the run
+    # entering any band at all, and deleted the occupants it had just killed
+    # while the cabin got measurably worse (EXP-010). Omit a key to fall back
+    # to the operational threshold, which is the pre-EXP-010 behaviour.
+    bands:
+      co2_storage_high_kg: 2.0  # [kg] WARNING edge for dwell
+      co2_storage_critical_kg: 8.0  # [kg] CRITICAL edge for dwell
+      o2_storage_low_kg: 6.0  # [kg] WARNING edge
+      o2_storage_critical_kg: 1.0  # [kg] CRITICAL edge
+      product_water_low_l: 50.0  # [L] WARNING edge
+      product_water_critical_l: 25.0  # [L] CRITICAL edge
     o2:
       warning_steps: 2  # [steps] consecutive WARNING before loss
       warning_loss: 1  # [person]

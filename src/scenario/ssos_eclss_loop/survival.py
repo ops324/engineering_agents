@@ -48,6 +48,29 @@ class SurvivalStreaks:
         return replace(self)
 
 
+def resolve_survival_bands(
+    plant_sim: Mapping[str, Any] | None,
+    thresholds: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Band edges attrition reads, which need not be the operational alarms.
+
+    They were the same keys, deliberately: an operator's alarm and the edge of
+    the band that kills are the same physical situation, and one number said
+    both. But ``thresholds.*`` is reachable by a ``set_parameter`` proposal, so
+    a proposal that raised an alarm above the trajectory stopped the run from
+    ever entering a band -- and deleted the deaths it had just caused (EXP-010).
+
+    ``plant_sim.survival.bands`` is outside ALLOWED_SET_PARAMETER_TARGETS, so a
+    band written there cannot be moved by a proposal. Anything omitted falls
+    back to the operational threshold, which keeps every existing config
+    behaving exactly as before.
+    """
+    bands = dict(((plant_sim or {}).get("survival") or {}).get("bands") or {})
+    resolved = dict(thresholds)
+    resolved.update({key: value for key, value in bands.items() if value is not None})
+    return resolved
+
+
 @dataclass
 class SurvivalDwellPolicy:
     enabled: bool = False
@@ -220,6 +243,7 @@ def map_physics_limiting(limiting: list[str]) -> list[str]:
 
 __all__ = [
     "CAUSE_PRIORITY",
+    "resolve_survival_bands",
     "PHYSICS_LIMITING",
     "SurvivalDwellPolicy",
     "SurvivalStreaks",

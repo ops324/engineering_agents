@@ -53,6 +53,7 @@ import yaml
 from scenario.jobs.executor import execute_run
 from scenario.jobs.spec import RunSpec
 from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
+from scenario.ssos_eclss_loop.survival import resolve_survival_bands
 from scenario.ssos_eclss_loop.survival_replay import replay_survival
 from scenario.ssos_eclss_loop.trajectory_metrics import (
     NotScorable,
@@ -305,8 +306,17 @@ def evaluate_proposal(
     crew_initial = baseline.summary.get("crew_initial")
     if survival_cfg.get("enabled") and crew_initial is not None:
         frozen_crew = {
+            # The bands attrition read, which are no longer the operational
+            # alarms: a run records both, and replaying against the alarms
+            # would count deaths on edges that never took anyone.
             "thresholds": (
-                baseline.summary.get("thresholds") or baseline.config.get("thresholds") or {}
+                baseline.summary.get("survival_bands")
+                or resolve_survival_bands(
+                    baseline.config.get("plant_sim"),
+                    baseline.summary.get("thresholds")
+                    or baseline.config.get("thresholds")
+                    or {},
+                )
             ),
             "survival": survival_cfg,
             "crew_initial": int(crew_initial),

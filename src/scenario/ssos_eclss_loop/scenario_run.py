@@ -48,6 +48,7 @@ from scenario.ssos_eclss_loop.health import (
 )
 from scenario.ssos_eclss_loop.survival import (
     SurvivalDwellPolicy,
+    resolve_survival_bands,
     SurvivalStreaks,
     map_physics_limiting,
 )
@@ -248,7 +249,7 @@ def _apply_survival_after_ops(
     team: Optional[SsosEclssLoopTeam],
     step: int,
     log: EventLog,
-    thresholds: Dict[str, Any],
+    bands: Dict[str, Any],
     policy: SurvivalDwellPolicy,
     streaks: SurvivalStreaks,
     physics_floor: bool,
@@ -264,7 +265,7 @@ def _apply_survival_after_ops(
     by_cause: Dict[str, int] = {}
     dwell_lost = 0
     if policy.enabled:
-        health = compute_eclss_storage_health(step, snap, thresholds)
+        health = compute_eclss_storage_health(step, snap, bands)
         new_alive, dwell_lost, limiting, streaks, by_cause = policy.apply_dwell(
             alive, health, streaks
         )
@@ -427,6 +428,10 @@ class SsosEclssLoopScenario(Scenario):
         peak_co2: Optional[float] = None
         min_o2: Optional[float] = None
         dwell_policy = SurvivalDwellPolicy.from_config(config.get("plant_sim") or {})
+        # Attrition reads these, the operators read `thresholds`, and only the
+        # latter is reachable by a proposal. Identical values by default, so a
+        # config that names no bands behaves exactly as it did.
+        survival_bands = resolve_survival_bands(config.get("plant_sim"), thresholds)
         dwell_streaks = SurvivalStreaks()
 
         try:
@@ -501,7 +506,7 @@ class SsosEclssLoopScenario(Scenario):
                     team=team,
                     step=step,
                     log=log,
-                    thresholds=thresholds,
+                    bands=survival_bands,
                     policy=dwell_policy,
                     streaks=dwell_streaks,
                     physics_floor=step + 1 < steps,
@@ -534,6 +539,10 @@ class SsosEclssLoopScenario(Scenario):
             "message_count": message_count,
             "operational_command_count": operational_command_count,
             "thresholds": build_effective_thresholds(thresholds),
+            # What attrition actually read. Equal to thresholds unless the
+            # config names bands, and worth carrying either way: a run that
+            # reports occupant losses should say which edges took them.
+            "survival_bands": build_effective_thresholds(survival_bands),
             "health_inputs": health_inputs_note(),
             **config_paths,
         }

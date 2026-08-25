@@ -145,19 +145,26 @@ def test_raising_the_bar_is_graded_on_its_physics_not_on_the_bar(tmp_path, basel
 
 
 def test_a_proposal_cannot_bank_the_deaths_it_deleted(tmp_path, baseline):
-    """EXP-010, pinned: attrition is graded on the baseline's bands.
+    """EXP-010, pinned at both layers.
 
-    Occupants die from dwelling in a health band, and the band edges are the
-    same thresholds.* keys a proposal may move. Raise the alarm above the
-    trajectory and the run reports "safe" for every reading: the dwell counter
-    never advances, and the run's own crew_remaining reports occupants it
-    killed as alive, while the air is measurably worse.
+    Occupants die from dwelling in a health band. Those edges used to be the
+    same thresholds.* keys a proposal may move, so raising an alarm above the
+    trajectory made the run report "safe" for every reading, the dwell counter
+    never advanced, and occupants the proposal had killed were reported alive.
 
-    The frozen-bar defence that protects the CO2 figures cannot reach this --
-    attrition happens inside the run, not at scoring time -- so the comparison
-    replays the dwell policy over each arm's recorded trajectory under the
-    baseline's bands. Both readings are asserted here: what the runs claim
-    about themselves, and what the held bands say they did.
+    Two things now stand between a proposal and that outcome, and this asserts
+    both, because either alone would leave a way back:
+
+    - the edges live in plant_sim.survival.bands, which is not in
+      ALLOWED_SET_PARAMETER_TARGETS, so the alarm moves and the lethal edge
+      does not; and
+    - the comparison counts occupants by replaying the dwell policy over each
+      arm's trajectory under the baseline's bands, so a run that did move them
+      would still be counted on the bar it was measured against.
+
+    Measured with the alarm raised from 2.0 to 4.76 kg: cabin peak 2.380 ->
+    2.760, three occupants in both arms, and the band still reading 2.0 in the
+    treated run's own summary.
     """
     baseline_summary = json.loads(
         (baseline / "summary.json").read_text(encoding="utf-8")
@@ -169,17 +176,27 @@ def test_a_proposal_cannot_bank_the_deaths_it_deleted(tmp_path, baseline):
     ])
     ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="hide")
 
-    def reported_crew(key: str) -> int:
+    def summary_of(key: str) -> dict:
         run_dir = Path(ev["pairs"][0][key]["run_dir"])
-        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-        return int(summary["crew_remaining"])
+        return json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
 
-    # What the runs say about themselves: the proposal saved a life.
-    assert reported_crew("treated") > reported_crew("control")
+    control, treated = summary_of("control"), summary_of("treated")
 
-    # What they did. The air got worse ...
+    # The alarm moved; the edge that kills did not.
+    assert treated["thresholds"]["co2_storage_high_kg"] == own_bar
+    assert (
+        treated["survival_bands"]["co2_storage_high_kg"]
+        == control["survival_bands"]["co2_storage_high_kg"]
+    )
+
+    # The air got worse ...
     assert ev["aggregate"]["peak_kg"]["delta"]["mean"] > 0
-    # ... and counted on the bands the proposal did not set, it saved nobody.
+    # ... and the run's own occupant count does not improve for it. This is the
+    # assertion that fails first if the bands are ever coupled back.
+    assert int(treated["crew_remaining"]) <= int(control["crew_remaining"])
+
+    # The second layer agrees: counted on bands the proposal did not set, the
+    # proposal saved nobody.
     assert "crew_remaining_frozen" in ev["aggregate"]
     assert ev["aggregate"]["crew_remaining_frozen"]["delta"]["mean"] <= 0
     assert ev["aggregate"]["crew_remaining_frozen"]["improved"] == 0
