@@ -80,6 +80,10 @@ step 1 で既に帯を割り、**SAFE な定常状態が存在しない**。
   「telemetry 行 vs step」の二重計数が gate 側に残っている（`ea score` は 50 と正しく数える）
 - **`capacity_bounds` が ARS を定格の 6.00 倍と報告**（10倍超のみ不合格なので pass）。上の二重計数の
   影響を受けている可能性があり、未解決の「真の上限」問題と B4 の両方に直結する
+- **run 成果物が commit を名乗れない。** trunk の `summary.json` に `code_version` は無い
+  （書き込む `c9fccac` は古い枝にあり未 cherry-pick）。この実験の SHA 対応は本メモと
+  `~/ea-runs/.../README.md` という外部記録に依存する。フロー最重要ルール（SHA × Config × Result）を
+  成果物側で担保するには `c9fccac` を載せる必要がある（5ファイル、+97/-1）
 - 物差しハザードのテストが literal `9.0` に依存していた。乗員50では軌跡が 9 kg を自力で越えるため
   実演が成立しなくなり、baseline run 自身の peak から導出する形に変更した（`2be14ad`）
 
