@@ -38,6 +38,7 @@ from scenario.runner import (
 from scenario.ssos_eclss_loop.agent_config import (
     flatten_actor_config,
     flatten_design_config,
+    iter_ssos_llm_targets,
     resolve_ssos_modes,
 )
 from scenario.ssos_eclss_loop.health import (
@@ -567,10 +568,15 @@ class SsosEclssLoopScenario(Scenario):
         # cannot be pooled with another run, and nothing downstream can tell
         # that it was pooled wrongly.
         summary["code_version"] = describe_code_version()
-        if summary["agents_mode"] == "llm":
-            llm_cfg = (agents_config or {}).get("llm") or {}
+        # Each enabled side's own block. #57 moved llm under actor and gave
+        # design its own endpoint and model; agents_config["llm"] now holds
+        # only the CLI's seed stub, so reading it described the ollama default
+        # and a vLLM run recorded itself as llama3.2 on localhost -- exactly the
+        # silent mixing this field exists to prevent. The two sides can run
+        # different models on different servers, so both are recorded.
+        for side, llm_cfg in iter_ssos_llm_targets(agents_config or {}):
             provider, base_url, model = describe_llm_target(llm_cfg)
-            summary["llm"] = _omit_nulls(
+            summary["llm" if side == "actor" else f"llm_{side}"] = _omit_nulls(
                 {
                     "provider": provider,
                     "base_url": base_url,
