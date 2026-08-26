@@ -45,7 +45,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-009](EXP-009-crew-four.md) | 乗員を装置定格に合わせる（v3） | confirmed（予測6件中5件的中） |
 | [EXP-010](EXP-010-crew-axis-is-not-guarded.md) | 提案が乗員残存を操作できる | confirmed（案1+案2で封鎖） |
 | [EXP-011](EXP-011-noise-floor-v3.md) | ノイズ床の測り直し（v3） | confirmed（予測5件中2件的中） |
-| [EXP-012](EXP-012-temperature.md) | サンプリング温度は性能を変えるか | pre-registered |
+| [EXP-012](EXP-012-temperature.md) | サンプリング温度は性能を変えるか | **rejected**（仮説は追試されず） |
 
 ## データの所在
 
