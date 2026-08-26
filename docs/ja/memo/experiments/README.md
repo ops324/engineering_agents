@@ -46,7 +46,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-010](EXP-010-crew-axis-is-not-guarded.md) | 提案が乗員残存を操作できる | confirmed（案1+案2で封鎖） |
 | [EXP-011](EXP-011-noise-floor-v3.md) | ノイズ床の測り直し（v3） | confirmed（予測5件中2件的中） |
 | [EXP-012](EXP-012-temperature.md) | サンプリング温度は性能を変えるか | **rejected**（仮説は追試されず） |
-| [EXP-013](EXP-013-llm-vs-rule.md) | AI腕 vs ルール腕 | pre-registered |
+| [EXP-013](EXP-013-llm-vs-rule.md) | AI腕 vs ルール腕 | **confirmed**（ルール腕が有意に優位） |
 
 ## データの所在
 

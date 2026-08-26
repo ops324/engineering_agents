@@ -201,6 +201,25 @@ def _requested_processed(events: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     return totals
 
 
+def _sum_parts(parts: Dict[str, Optional[float]], maxima: Dict[str, float]) -> Dict[str, Any]:
+    """Sum the parts that could be measured, and say what the rest cost the max.
+
+    "配点を自動再配分せず、適用可能点と満点を明示する": a part with nothing to
+    measure is dropped from the axis and from the axis's maximum, never scored
+    zero and never spread across the others.
+    """
+    measurable = {name: value for name, value in parts.items() if value is not None}
+    if not measurable:
+        return {"points": None, "parts": parts, "max_effective": 0,
+                "parts_not_measurable": sorted(parts)}
+    return {
+        "points": round(sum(measurable.values()), 4),
+        "parts": parts,
+        "max_effective": sum(maxima[name] for name in measurable),
+        "parts_not_measurable": sorted(set(parts) - set(measurable)),
+    }
+
+
 def _score_a(axis: Dict[str, Any], yardstick_bands: Dict[str, float]) -> Dict[str, Any]:
     """A 生存環境 — 20点. CO2 8, O2 4, water 4, dwell 4.
 
@@ -231,8 +250,7 @@ def _score_a(axis: Dict[str, Any], yardstick_bands: Dict[str, float]) -> Dict[st
         "water": _points(None if water_used is None else 1 - water_used, 4),
         "dwell": _points(None if critical_used is None else 1 - critical_used, 4),
     }
-    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
-    return {"points": total, "parts": parts}
+    return _sum_parts(parts, {"co2": 8, "o2": 4, "water": 4, "dwell": 4})
 
 
 def _score_b(axis: Dict[str, Any]) -> Dict[str, Any]:
@@ -262,8 +280,8 @@ def _score_b(axis: Dict[str, Any]) -> Dict[str, Any]:
         "water_worst": _points(above(water["min_l"], water["band_low_l"]), 3),
         "water_terminal": _points(above(water["terminal_l"], water["band_low_l"]), 3),
     }
-    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
-    return {"points": total, "parts": parts}
+    return _sum_parts(parts, {"co2_worst": 4, "co2_terminal": 4, "o2_worst": 3,
+                              "o2_terminal": 3, "water_worst": 3, "water_terminal": 3})
 
 
 def _score_c(axis: Dict[str, Any], dwell_steps: int) -> Dict[str, Any]:
@@ -296,8 +314,8 @@ def _score_c(axis: Dict[str, Any], dwell_steps: int) -> Dict[str, Any]:
     invalid_points = _points(1 - (rejected / issued), 1) if issued else None
 
     parts = {"latency": latency_points, "request_sizing": sizing_points, "invalid_ops": invalid_points}
-    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
-    return {"points": total, "parts": parts}
+    maxima = {"latency": 2, "request_sizing": 2, "invalid_ops": 1}
+    return _sum_parts(parts, maxima)
 
 
 def _score_d(axis: Dict[str, Any]) -> Dict[str, Any]:
@@ -368,7 +386,10 @@ def _request_sizing(
     oversized: Dict[str, int] = {}
     sized: List[float] = []
     for event in events:
-        if event.get("kind") != "/eclss/events/operational_applied":
+        # Applied and rejected both: asking for something the machine cannot
+        # take is a judgement, and it does not stop being one because the
+        # command was refused for another reason.
+        if event.get("kind") not in _COMMAND_OUTCOME_KINDS:
             continue
         command = event.get("command") or {}
         kind = str(command.get("kind") or "")
@@ -398,6 +419,11 @@ def _request_sizing(
         "per_operation_capacity": {k: v for k, v in capacity.items() if v is not None},
     }
 
+
+_COMMAND_OUTCOME_KINDS = frozenset({
+    "/eclss/events/operational_applied",
+    "/eclss/events/operational_rejected",
+})
 
 _SATURATION_REASONS = frozenset({
     "cabin_co2_inventory", "ogs_capacity", "product_water", "urine_buffer",
@@ -574,11 +600,24 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         },
     }
 
+    # "配点を自動再配分せず、適用可能点と満点を明示する": an axis that applies
+    # but has nothing to measure -- D on a run where every command was refused,
+    # so the plant was never asked to respond -- leaves the total and takes its
+    # points out of the maximum, rather than scoring zero for a failure that is
+    # not there.
     if passed:
         a = _score_a(axes["A_environment"], yardstick_bands)
-        axes["A_environment"].update(points=a["points"], parts=a["parts"])
+        axes["A_environment"].update(
+            points=a["points"], parts=a["parts"],
+            max_effective=a.get("max_effective"),
+            parts_not_measurable=a.get("parts_not_measurable"),
+        )
         b = _score_b(axes["B_margin"])
-        axes["B_margin"].update(points=b["points"], parts=b["parts"])
+        axes["B_margin"].update(
+            points=b["points"], parts=b["parts"],
+            max_effective=b.get("max_effective"),
+            parts_not_measurable=b.get("parts_not_measurable"),
+        )
         if operations_apply:
             dwell_steps = int(
                 ((summary.get("plant_sim") or {}).get("survival") or {}).get("co2", {}).get(
@@ -587,13 +626,38 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
                 or 2
             )
             c = _score_c(axes["C_judgement"], dwell_steps)
-            axes["C_judgement"].update(points=c["points"], parts=c["parts"])
+            axes["C_judgement"].update(
+            points=c["points"], parts=c["parts"],
+            max_effective=c.get("max_effective"),
+            parts_not_measurable=c.get("parts_not_measurable"),
+        )
             d = _score_d(axes["D_response"])
-            axes["D_response"].update(points=d["points"], parts=d["parts"])
+            axes["D_response"].update(
+            points=d["points"], parts=d["parts"],
+            max_effective=d.get("max_effective"),
+            parts_not_measurable=d.get("parts_not_measurable"),
+        )
 
-    applicable_max = 50 + 20 + 20 + (10 if operations_apply else 0)
-    unscored = [name for name, axis in axes.items()
-                if axis["points"] is None and axis.get("applicable", True)]
+    for name, axis in axes.items():
+        if axis.get("applicable", True) and axis["points"] is None and passed:
+            axis["measurable"] = False
+            axis.setdefault(
+                "unmeasurable_reason",
+                "nothing in the record to score this axis on",
+            )
+
+    counted = [
+        axis for axis in axes.values()
+        if axis.get("applicable", True) and axis.get("measurable", True)
+    ]
+    applicable_max = sum(
+        axis["max_effective"] if axis.get("max_effective") is not None else axis["max"]
+        for axis in counted
+    )
+    unscored = [
+        name for name, axis in axes.items()
+        if axis["points"] is None and axis.get("applicable", True) and axis.get("measurable", True)
+    ]
     return {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_dir.name,
@@ -609,10 +673,12 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         "axes": axes,
         "total": {
             "points": (
-                round(sum(axis["points"] for name, axis in axes.items()
-                          if axis.get("applicable", True)), 4)
+                round(sum(axis["points"] for axis in counted), 4)
                 if passed and not unscored else None
             ),
+            "axes_not_measurable": [
+                name for name, axis in axes.items() if axis.get("measurable") is False
+            ],
             "applicable_max": applicable_max,
             "unscored_axes": unscored,
             "note": (
