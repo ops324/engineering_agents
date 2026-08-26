@@ -9,7 +9,7 @@ import pytest
 
 from scenario.jobs.executor import execute_run
 from scenario.jobs.spec import RunSpec
-from scenario.ssos_eclss_loop.scorecard import score_run
+from scenario.ssos_eclss_loop.scorecard import POINTS_POLICY, score_run
 
 BASE = {
     "backend": {"kind": "plant_sim"},
@@ -38,22 +38,49 @@ def test_the_one_axis_with_a_formula_is_scored(rule_run):
     assert axis["formula"] == "50 × actor_remaining ÷ actor_initial"
 
 
-def test_the_axes_without_a_formula_are_not_invented(rule_run):
-    """The refusal is the feature.
+def test_curves_the_scorecard_does_not_state_are_labelled_as_this_branch_s(rule_run):
+    """A–D carry curves now, and every one of them says whose they are.
 
-    A curve chosen here would define "better" in a scoring module rather than in
-    the document the team agreed, and every comparison after it would inherit
-    that choice without anyone deciding it.
+    The scorecard states one formula, for the 50-point axis. The rest were
+    chosen here on 2026-08-26 and are not in the document; a reader of a scored
+    artifact has to be able to tell those apart, or a branch's choice gets
+    reported as the project's criterion.
     """
     card = score_run(rule_run)
     for name in ("A_environment", "B_margin", "C_judgement", "D_response"):
         axis = card["axes"][name]
-        assert axis["points"] is None
-        assert axis["undefined_reason"]
-    assert card["total"]["points"] is None
-    assert set(card["total"]["unscored_axes"]) == {
-        "A_environment", "B_margin", "C_judgement", "D_response"
-    }
+        assert axis["points"] is not None
+        assert axis["points_policy"] == POINTS_POLICY
+    assert card["axes"]["actor_remaining"]["formula"] == "50 × actor_remaining ÷ actor_initial"
+    assert "points_policy" not in card["axes"]["actor_remaining"]
+    assert card["total"]["points"] == pytest.approx(
+        sum(card["axes"][name]["points"] for name in card["axes"]
+            if card["axes"][name].get("applicable", True))
+    )
+
+
+def test_the_curves_separate_the_arms(rule_run, tmp_path):
+    """A scoring curve that cannot tell the arms apart is not a scoring curve.
+
+    The first draft normalised CO2 exposure by the limit itself and scored a
+    run where the whole crew died at 17.4 of 20 against 20.0 for the best run.
+    This pins that the total moves with the outcome: no operator at all must
+    score below the rule arm on the axes both of them have.
+    """
+    result = execute_run(
+        RunSpec(scenario="ssos_eclss_loop", overrides={**BASE, "agents": {"mode": "none"}},
+                run_id="idle", results_root=tmp_path, seed=101)
+    )
+    idle = score_run(Path(result.run_dir))
+    rule = score_run(rule_run)
+    shared = ("actor_remaining", "A_environment", "B_margin")
+    assert sum(rule["axes"][a]["points"] for a in shared) > sum(
+        idle["axes"][a]["points"] for a in shared
+    )
+    # C and D do not apply without an operator, and the maxima differ, so the
+    # totals are not comparable -- the scorecard says so outright.
+    assert idle["total"]["applicable_max"] == 90
+    assert rule["total"]["applicable_max"] == 100
 
 
 def test_the_quantities_those_axes_need_are_present(rule_run):

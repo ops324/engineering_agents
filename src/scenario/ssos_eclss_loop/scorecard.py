@@ -27,8 +27,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+import yaml
+
 from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
 from scenario.ssos_eclss_loop.reference_limits import Habitat
+from environment.ssos.eclss.plant_sim.stoichiometry import WATER_PER_O2
 from scenario.ssos_eclss_loop.survival import resolve_survival_bands
 from scenario.ssos_eclss_loop.trajectory_metrics import (
     NotScorable,
@@ -41,12 +44,39 @@ from scenario.ssos_eclss_loop.trajectory_metrics import (
 
 SCHEMA_VERSION = "0.1.0"
 
-#: Axes whose point formula the scorecard does not state.
+#: Where the point curves come from.
+#:
+#: The scorecard states one formula -- 50 × remaining ÷ initial -- and names the
+#: quantities for A through D without saying what they are worth. The curves
+#: below were chosen on this branch on 2026-08-26 and are **not** in the
+#: document. Every scored artifact carries this string so a reader never mistakes
+#: them for the team's.
+POINTS_POLICY = "branch choice 2026-08-26: absolute anchors, no reference run"
+
+#: An absolute scale means the anchors are published limits or the plant's own
+#: constants, never another run. A run that scores near full on an axis is then
+#: saying the habitat was genuinely not dangerous on it -- which is information,
+#: not a broken curve. The first draft normalised CO2 exposure by the limit
+#: itself and scored a run where the whole crew died at 17.4 of 20; anchoring on
+#: the ladder's next rung instead is what makes the axis mean something.
 _UNDEFINED = (
     "the scorecard names the quantities for this axis but no point formula; "
     "converting them here would define the criterion in code rather than in "
     "the document"
 )
+
+
+def _fraction(value: Optional[float], scale: float) -> Optional[float]:
+    """value/scale clipped to [0, 1]; None survives as None."""
+    if value is None or not scale:
+        return None
+    return max(0.0, min(1.0, float(value) / float(scale)))
+
+
+def _points(remaining_fraction: Optional[float], maximum: float) -> Optional[float]:
+    if remaining_fraction is None:
+        return None
+    return round(maximum * max(0.0, min(1.0, remaining_fraction)), 4)
 
 ACTOR_MODES_WITH_OPERATIONS = frozenset({"labeled_rule_base", "llm"})
 
@@ -171,6 +201,252 @@ def _requested_processed(events: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     return totals
 
 
+def _score_a(axis: Dict[str, Any], yardstick_bands: Dict[str, float]) -> Dict[str, Any]:
+    """A 生存環境 — 20点. CO2 8, O2 4, water 4, dwell 4.
+
+    CO2 is anchored on the ladder's own next rung: zero points when the average
+    overshoot above the nominal limit equals the gap up to the ISS off-nominal
+    level. O2 and water have no published limit here -- reference_limits records
+    both as named gaps -- so their anchor is the plant's own band and empty:
+    zero points when the inventory sat at nothing for the whole run.
+    """
+    dwell = axis["dwell"]
+    steps = dwell["steps"] or 1
+    exposure = axis["co2_exposure_integral"] or {}
+    nominal = exposure.get(axis.get("co2_exposure_band")) if axis.get("co2_exposure_band") else None
+    nominal_kg = yardstick_bands.get("nominal")
+    off_nominal_kg = yardstick_bands.get("off_nominal")
+    co2_scale = (
+        (off_nominal_kg - nominal_kg) * steps
+        if nominal_kg is not None and off_nominal_kg is not None
+        else None
+    )
+    co2_used = _fraction(nominal, co2_scale) if co2_scale else None
+    o2_used = _fraction(axis["o2_deficit_integral"], (axis.get("o2_band_low") or 0) * steps)
+    water_used = _fraction(axis["water_deficit_integral"], (axis.get("water_band_low") or 0) * steps)
+    critical_used = _fraction(dwell["overall"]["critical"], steps)
+    parts = {
+        "co2": _points(None if co2_used is None else 1 - co2_used, 8),
+        "o2": _points(None if o2_used is None else 1 - o2_used, 4),
+        "water": _points(None if water_used is None else 1 - water_used, 4),
+        "dwell": _points(None if critical_used is None else 1 - critical_used, 4),
+    }
+    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
+    return {"points": total, "parts": parts}
+
+
+def _score_b(axis: Dict[str, Any]) -> Dict[str, Any]:
+    """B 資源余裕 — 20点. CO2 8, O2 6, water 6, each half worst-point half terminal.
+
+    Margin is measured against the band the run was operated to, so full points
+    mean "never approached the edge and ended clear of it".
+    """
+    co2, o2, water = axis["co2"], axis["o2"], axis["water"]
+    limit = axis.get("co2_limit_kg")
+
+    def below(value, edge):
+        if value is None or not edge:
+            return None
+        return max(0.0, min(1.0, (edge - float(value)) / float(edge)))
+
+    def above(value, edge):
+        if value is None or not edge:
+            return None
+        return max(0.0, min(1.0, float(value) / float(edge)))
+
+    parts = {
+        "co2_worst": _points(below(co2["peak_kg"], limit), 4),
+        "co2_terminal": _points(below(co2["terminal_kg"], limit), 4),
+        "o2_worst": _points(above(o2["min_kg"], o2["band_low_kg"]), 3),
+        "o2_terminal": _points(above(o2["terminal_kg"], o2["band_low_kg"]), 3),
+        "water_worst": _points(above(water["min_l"], water["band_low_l"]), 3),
+        "water_terminal": _points(above(water["terminal_l"], water["band_low_l"]), 3),
+    }
+    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
+    return {"points": total, "parts": parts}
+
+
+def _score_c(axis: Dict[str, Any], dwell_steps: int) -> Dict[str, Any]:
+    """C actorの操作判断 — 5点. latency 2, request sizing 2, invalid ops 1.
+
+    Latency is anchored on the dwell window that kills: reaching the subsystem
+    within it means nobody was lost to that band, and never acting while an
+    alarm stood scores zero rather than being skipped.
+
+    Request sizing is here rather than in D because the scorecard puts D after
+    "物理的に妥当な要求" -- a command for thirty-six times what the machine can
+    take is not a plant failure, it is a judgement about the plant.
+    """
+    latencies = axis.get("response_latency_steps") or {}
+    graded = []
+    for detail in latencies.values():
+        if detail.get("latency_steps") is not None:
+            graded.append(max(0.0, 1.0 - detail["latency_steps"] / max(1, dwell_steps)))
+        elif detail.get("reason", "").startswith("no such command"):
+            graded.append(0.0)  # an alarm stood and nothing was ever sent
+    latency_points = _points(sum(graded) / len(graded), 2) if graded else None
+
+    sizing = (axis.get("request_sizing") or {}).get("sizing_score")
+    sizing_points = _points(sizing, 2) if sizing is not None else None
+
+    outcomes = axis.get("command_outcomes") or {}
+    applied = int(outcomes.get("applied") or 0)
+    rejected = int(outcomes.get("rejected") or 0)
+    issued = applied + rejected
+    invalid_points = _points(1 - (rejected / issued), 1) if issued else None
+
+    parts = {"latency": latency_points, "request_sizing": sizing_points, "invalid_ops": invalid_points}
+    total = None if any(v is None for v in parts.values()) else round(sum(parts.values()), 4)
+    return {"points": total, "parts": parts}
+
+
+def _score_d(axis: Dict[str, Any]) -> Dict[str, Any]:
+    """D 設計・装置の物理応答 — 5点.
+
+    The plant's axis, not the actor's. Comparing "requested" to "processed"
+    directly does not measure it: the ARS request is a goal state, not a
+    quantity of work, and the plant's own design note says asking for more than
+    is on hand is how a caller says "give me what you can" -- saturating at the
+    inventory is correct behaviour, not underperformance.
+
+    So this asks whether the machine delivered everything it physically could:
+    each applied command counts as satisfied when it was fully satisfied or
+    limited only by its own capacity or by the inventory available.
+    """
+    outcomes = axis.get("delivery") or {}
+    total = int(outcomes.get("commands") or 0)
+    if not total:
+        return {"points": None, "parts": {}}
+    delivered = int(outcomes.get("delivered_all_it_could") or 0)
+    return {
+        "points": _points(delivered / total, 5),
+        "parts": {"delivered_all_it_could": delivered, "commands": total,
+                  "shortfalls": outcomes.get("shortfalls"),
+                  "not_reported_by_plant": outcomes.get("not_reported_by_plant")},
+    }
+
+
+def _per_operation_capacity(run_dir: Path) -> Dict[str, Optional[float]]:
+    """What one action of each subsystem can physically take, from the run's config.
+
+    A request larger than this is not a plant failure -- the plant saturates --
+    it is an actor asking for what the machine cannot do, which is C's business.
+    """
+    path = Path(run_dir) / "scenario_config.yaml"
+    if not path.is_file():
+        return {}
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    plant = config.get("plant_sim") or {}
+    time_cfg, ars, ogs, wrs = (plant.get(k) or {} for k in ("time", "ars", "ogs", "wrs"))
+    out: Dict[str, Optional[float]] = {}
+    # ARS takes a goal, not a quantity: the reference goal is the size the
+    # machine is rated against, so a larger one is a request for super-rated work.
+    out["air_revitalisation"] = ars.get("reference_goal_co2_kg")
+    max_o2 = ogs.get("max_o2_kg_day")
+    seconds = time_cfg.get("ogs_operation_seconds")
+    out["oxygen_generation"] = (
+        float(max_o2) * float(seconds) / 86400.0 * WATER_PER_O2
+        if max_o2 is not None and seconds is not None
+        else None
+    )
+    out["water_recovery"] = wrs.get("max_feed_l_per_operation")
+    return out
+
+
+_REQUEST_FIELDS = {
+    "air_revitalisation": "initial_co2_mass",
+    "oxygen_generation": "input_water_mass",
+    "water_recovery": "urine_volume",
+}
+
+
+def _request_sizing(
+    events: Sequence[Dict[str, Any]], capacity: Dict[str, Optional[float]]
+) -> Dict[str, Any]:
+    """How often the actor asked for something the machine could actually take."""
+    within = total = 0
+    oversized: Dict[str, int] = {}
+    sized: List[float] = []
+    for event in events:
+        if event.get("kind") != "/eclss/events/operational_applied":
+            continue
+        command = event.get("command") or {}
+        kind = str(command.get("kind") or "")
+        limit = capacity.get(kind)
+        field = _REQUEST_FIELDS.get(kind)
+        if limit is None or field is None:
+            continue
+        asked = (command.get("payload") or {}).get(field)
+        if asked is None:
+            continue
+        total += 1
+        # Graded by how far over, not by whether. The rule arm asks 0.15 kg of
+        # an OGS that can take 0.1447 -- 3.7% over, a stale tuning value -- and
+        # an LLM run asked 246 kg, seventeen hundred times over. A binary test
+        # scores those the same.
+        headroom = min(1.0, float(limit) / float(asked)) if float(asked) > 0 else 1.0
+        sized.append(headroom)
+        if float(asked) <= float(limit) * (1 + 1e-9):
+            within += 1
+        else:
+            oversized[kind] = oversized.get(kind, 0) + 1
+    return {
+        "within_capacity_fraction": round(within / total, 6) if total else None,
+        "sizing_score": round(sum(sized) / len(sized), 6) if sized else None,
+        "commands_sized": total,
+        "oversized_by_kind": oversized,
+        "per_operation_capacity": {k: v for k, v in capacity.items() if v is not None},
+    }
+
+
+_SATURATION_REASONS = frozenset({
+    "cabin_co2_inventory", "ogs_capacity", "product_water", "urine_buffer",
+    "grey_water", "wrs_capacity", "captured_co2", "available_o2",
+})
+
+
+def _delivery(events: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Did the plant give everything it physically could, per applied command."""
+    commands = delivered = 0
+    shortfalls: Dict[str, int] = {}
+    unjudgeable: Dict[str, int] = {}
+    for event in events:
+        if event.get("kind") != "/eclss/events/operational_applied":
+            continue
+        details = (event.get("result") or {}).get("details") or {}
+        if not details:
+            continue
+        limited = details.get("limited_by")
+        if "fully_satisfied" not in details and limited is None:
+            # water_recovery reports feeds and recoveries but never says whether
+            # it was satisfied or what limited it. The plant not saying is not
+            # the plant failing, so these are set aside rather than counted
+            # against it -- and the count is reported so the silence is visible.
+            unjudgeable[str((event.get("command") or {}).get("kind") or "unknown")] = (
+                unjudgeable.get(str((event.get("command") or {}).get("kind") or "unknown"), 0) + 1
+            )
+            continue
+        commands += 1
+        limited_list = [limited] if isinstance(limited, str) else list(limited or [])
+        satisfied = bool(details.get("fully_satisfied")) or (
+            bool(limited_list) and all(reason in _SATURATION_REASONS for reason in limited_list)
+        )
+        if satisfied:
+            delivered += 1
+        else:
+            key = ",".join(limited_list) or "unexplained"
+            shortfalls[key] = shortfalls.get(key, 0) + 1
+    return {"commands": commands, "delivered_all_it_could": delivered,
+            "shortfalls": shortfalls, "not_reported_by_plant": unjudgeable}
+
+
+def _command_outcomes(events: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    """Applied and rejected counts straight from the log, so old runs score too."""
+    applied = sum(1 for e in events if e.get("kind") == "/eclss/events/operational_applied")
+    rejected = sum(1 for e in events if e.get("kind") == "/eclss/events/operational_rejected")
+    return {"applied": applied, "rejected": rejected}
+
+
 def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, Any]:
     """Scorecard outputs for one run. Points only where a formula exists."""
     run_dir = Path(run_dir)
@@ -209,6 +485,28 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         else None
     )
 
+    sizing = (
+        _request_sizing(events, _per_operation_capacity(run_dir)) if operations_apply else {}
+    )
+    co2_limit_kg = (
+        min(band.threshold_kg for band in yardstick.bands) if yardstick.bands else None
+    )
+    # The exposure scored is the one above the most stringent band, and the
+    # scale is the distance up to the next rung of whatever ladder is in use:
+    # nominal -> ISS off-nominal on the standard, high -> critical on a frozen
+    # baseline. A single-band yardstick has no next rung and scores nothing
+    # rather than dividing by zero.
+    yardstick_bands: Dict[str, float] = {}
+    exposure_band_name: Optional[str] = None
+    if trajectory:
+        ordered = sorted(
+            trajectory["co2"]["bands"].items(), key=lambda kv: kv[1]["threshold_kg"]
+        )
+        exposure_band_name = ordered[0][0]
+        yardstick_bands["nominal"] = ordered[0][1]["threshold_kg"]
+        if len(ordered) > 1:
+            yardstick_bands["off_nominal"] = ordered[1][1]["threshold_kg"]
+
     axes: Dict[str, Any] = {
         "actor_remaining": {
             "max": 50,
@@ -221,7 +519,14 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         "A_environment": {
             "max": 20,
             "points": None,
-            "undefined_reason": _UNDEFINED,
+            "points_policy": POINTS_POLICY,
+            # CO2 is anchored on a published ladder. O2 and water have no
+            # sourced limit -- reference_limits records both as named gaps and
+            # plant_sim models O2 as supply, not cabin atmosphere -- so their
+            # anchor is this project's own band. One axis, two kinds of ruler.
+            "co2_exposure_band": exposure_band_name,
+            "o2_band_low": bands.get("o2_storage_low_kg"),
+            "water_band_low": bands.get("product_water_low_l"),
             "co2_exposure_integral": (
                 {name: stats["exposure_integral_kg_steps"]
                  for name, stats in trajectory["co2"]["bands"].items()} if trajectory else None
@@ -233,7 +538,8 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         "B_margin": {
             "max": 20,
             "points": None,
-            "undefined_reason": _UNDEFINED,
+            "points_policy": POINTS_POLICY,
+            "co2_limit_kg": co2_limit_kg,
             "co2": {"peak_kg": trajectory["co2"]["peak_kg"] if trajectory else None,
                     "terminal_kg": trajectory["co2"]["terminal_kg"] if trajectory else None,
                     "terminal_margin_kg": (
@@ -251,7 +557,10 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
             "max": 5,
             "points": None,
             "applicable": operations_apply,
-            "undefined_reason": _UNDEFINED,
+            "points_policy": POINTS_POLICY,
+            "request_within_capacity": sizing.get("within_capacity_fraction"),
+            "request_sizing": sizing,
+            "command_outcomes": _command_outcomes(events) if operations_apply else None,
             "response_latency_steps": _response_latency(health_rows, events) if operations_apply else None,
             "commands": summary.get("commands"),
         },
@@ -259,10 +568,28 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
             "max": 5,
             "points": None,
             "applicable": operations_apply,
-            "undefined_reason": _UNDEFINED,
+            "points_policy": POINTS_POLICY,
             "requested_processed_ratio": _requested_processed(events) if operations_apply else None,
+            "delivery": _delivery(events) if operations_apply else None,
         },
     }
+
+    if passed:
+        a = _score_a(axes["A_environment"], yardstick_bands)
+        axes["A_environment"].update(points=a["points"], parts=a["parts"])
+        b = _score_b(axes["B_margin"])
+        axes["B_margin"].update(points=b["points"], parts=b["parts"])
+        if operations_apply:
+            dwell_steps = int(
+                ((summary.get("plant_sim") or {}).get("survival") or {}).get("co2", {}).get(
+                    "warning_steps", 2
+                )
+                or 2
+            )
+            c = _score_c(axes["C_judgement"], dwell_steps)
+            axes["C_judgement"].update(points=c["points"], parts=c["parts"])
+            d = _score_d(axes["D_response"])
+            axes["D_response"].update(points=d["points"], parts=d["parts"])
 
     applicable_max = 50 + 20 + 20 + (10 if operations_apply else 0)
     unscored = [name for name, axis in axes.items()
@@ -281,13 +608,17 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         "scorable": passed,
         "axes": axes,
         "total": {
-            "points": None,
+            "points": (
+                round(sum(axis["points"] for name, axis in axes.items()
+                          if axis.get("applicable", True)), 4)
+                if passed and not unscored else None
+            ),
             "applicable_max": applicable_max,
             "unscored_axes": unscored,
             "note": (
                 "physics gate failed; this run is not evidence"
                 if not passed
-                else "A–D carry no point formula in the scorecard, so no total is computed"
+                else f"points from {POINTS_POLICY}; the scorecard states only the 50-point formula"
             ),
         },
     }

@@ -334,7 +334,12 @@ def scorecard(
         if not axis.get("applicable", True):
             typer.echo(f"  {label:<12}   —  / {axis['max']}   (actor操作なしのため対象外)")
             continue
-        typer.echo(f"  {label:<12}   ?  / {axis['max']}   (点数化式が未定義。以下は材料)")
+        points = axis.get("points")
+        shown = f"{points:.1f}" if points is not None else "  ? "
+        typer.echo(
+            f"  {label:<12} {shown:>6} / {axis['max']}"
+            f"   ({axis.get('points_policy', '点数化式が未定義')})"
+        )
         if key == "A_environment":
             typer.echo(f"    co2 exposure {axis['co2_exposure_integral']}")
             typer.echo(
@@ -353,5 +358,10 @@ def scorecard(
                     f" {detail['processed']:.4g}  比 {detail['ratio']}"
                 )
     total = card["total"]
-    typer.echo(f"  合計           —  / {total['applicable_max']}   ({total['note']})")
+    points = total.get("points")
+    shown = f"{points:.1f}" if points is not None else "  — "
+    typer.echo(f"  合計         {shown:>6} / {total['applicable_max']}   ({total['note']})")
+    if total["applicable_max"] != 100:
+        # "100点満点ランと総合点を直接比較しない"
+        typer.echo("    ※ actor操作なしのため満点が異なる。100点満点のランと直接比較しないこと")
     raise typer.Exit(exit_codes.SUCCESS)
