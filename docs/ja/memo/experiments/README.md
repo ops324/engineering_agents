@@ -50,9 +50,19 @@ status:        confirmed | rejected | superseded | invalidated
 
 ## データの所在
 
-生データは GitHub に入れない（フロー §10）。要約の所在:
+生データは GitHub に入れない（フロー §10）。要約の所在（合計 54 MB）:
 
-- `~/ea-runs/2026-08-24-evidence/`（5.2 MB、866 run分の summary + 有効config + 監査レポート）— **世代 v1: 乗員4人・survival 無し**
-- `~/ea-runs/2026-08-25-trunk-baseline/`（8.6 MB、48 run + 再現スクリプト）— **世代 v2: trunk d5616389、乗員50・survival 有効**
+| ディレクトリ | 世代 | 内容 |
+|---|---|---|
+| `~/ea-runs/2026-08-24-evidence/` | **v1**（乗員4・survival 無し・旧閾値） | 866 run の summary + 監査3件。**telemetry は5 run 分しか無い**（EXP-008） |
+| `~/ea-runs/2026-08-25-trunk-baseline/` | **v2**（trunk d5616389・乗員50） | 48 run。全滅で判別不能を示す（EXP-007） |
+| `~/ea-runs/2026-08-25-v2-fullform/` | v2 | 同48条件を評価層ブランチで再実行。full form ゲート（EXP-008） |
+| `~/ea-runs/2026-08-26-v3-crew4/` | **v3**（乗員4・survival 有効） | 4 run + 物差しハザードの証拠（EXP-009 / EXP-010） |
+| `~/ea-runs/2026-08-26-v3-noise/` | v3 | LLM 10 run。ノイズ床（EXP-011） |
+| `~/ea-runs/2026-08-26-v3-temperature/` | v3 | LLM 14 run + 参照2。温度の検証（EXP-012） |
+| `~/ea-runs/2026-08-26-v3-llm-vs-rule/` | v3 | LLM 24 run + 参照2。**本題の比較**（EXP-013） |
 
-どちらも `README.md` に各ファイルがどの主張を支えるかの対応表がある。**両世代の run を同じ表に並べない**（EXP-007）。
+各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
+
+**世代の異なる run を同じ表に並べない。** v1 は乗員4・survival 無し、v2 は乗員50、v3 は乗員4・survival 有効。
+次の物理修正（定格の不変条件）を当てると **v4** になり、v3 の測定はすべて取り直しになる。
