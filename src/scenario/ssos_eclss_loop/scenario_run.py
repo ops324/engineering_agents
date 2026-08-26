@@ -243,6 +243,13 @@ def _append_post_ops(
     log.append("health_metrics", {**health, "post_ops": True})
 
 
+#: Event kinds that record the fate of one operational command.
+_COMMAND_OUTCOMES = {
+    "/eclss/events/operational_applied": "applied",
+    "/eclss/events/operational_rejected": "rejected",
+}
+
+
 def _apply_survival_after_ops(
     *,
     backend: EclssBackend,
@@ -419,6 +426,7 @@ class SsosEclssLoopScenario(Scenario):
             _wait_for_ros2_storage_telemetry(backend, timeout_s=startup_wait_s)
 
         message_count = 0
+        command_counts: Dict[str, Dict[str, int]] = {"applied": {}, "rejected": {}}
         operational_command_count = 0
         ars_invoked_step: Optional[int] = None
         ogs_invoked_step: Optional[int] = None
@@ -478,7 +486,19 @@ class SsosEclssLoopScenario(Scenario):
                         message_count += 1
                     for event in events:
                         log.append("events", {"step": step, **event})
-                        if event.get("kind") != "/eclss/events/operational_applied":
+                        # What the arm actually did, per subsystem, applied and
+                        # refused. EXP-012 found runs scoring exactly what doing
+                        # nothing scores, and only the command log said why: they
+                        # never issued a single air_revitalisation, and one spent
+                        # fifty steps asking an empty tank for CO2. An outcome
+                        # figure cannot tell "slightly clumsy" from "absent", and
+                        # that is the difference a comparison has to report.
+                        event_kind = event.get("kind")
+                        if event_kind in _COMMAND_OUTCOMES:
+                            bucket = command_counts[_COMMAND_OUTCOMES[event_kind]]
+                            name = str((event.get("command") or {}).get("kind") or "unknown")
+                            bucket[name] = bucket.get(name, 0) + 1
+                        if event_kind != "/eclss/events/operational_applied":
                             continue
                         cmd = (event.get("command") or {})
                         cmd_kind = cmd.get("kind")
@@ -543,6 +563,12 @@ class SsosEclssLoopScenario(Scenario):
             # config names bands, and worth carrying either way: a run that
             # reports occupant losses should say which edges took them.
             "survival_bands": build_effective_thresholds(survival_bands),
+            "commands": {
+                "applied": dict(sorted(command_counts["applied"].items())),
+                "rejected": dict(sorted(command_counts["rejected"].items())),
+                "applied_total": sum(command_counts["applied"].values()),
+                "rejected_total": sum(command_counts["rejected"].values()),
+            },
             "health_inputs": health_inputs_note(),
             **config_paths,
         }
