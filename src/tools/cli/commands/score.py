@@ -20,6 +20,7 @@ from scenario.ssos_eclss_loop.reference_limits import (
     Habitat,
     ppco2_mmhg,
 )
+from scenario.ssos_eclss_loop.scorecard import score_run
 from scenario.ssos_eclss_loop.trajectory_metrics import (
     inventory_metrics,
     NotScorable,
@@ -40,6 +41,7 @@ NOT_SCORABLE_EXIT = 4
 def register(app: typer.Typer) -> None:
     app.command("score")(score)
     app.command("evaluate")(evaluate)
+    app.command("scorecard")(scorecard)
 
 
 def _resolve_run(run: str, root: Path) -> Path:
@@ -275,4 +277,81 @@ def evaluate(
         )
     verdict = result["verdict"]
     typer.echo(f"  verdict: {verdict['label']} — {verdict['reason']}")
+    raise typer.Exit(exit_codes.SUCCESS)
+
+
+def scorecard(
+    run: str = typer.Argument(..., help="Run id under the results root, or a path to a run."),
+    results_root: Optional[Path] = typer.Option(
+        None, "--results-root", help="Override results base directory."
+    ),
+    habitat_volume_m3: Optional[float] = typer.Option(
+        None, "--habitat-volume-m3", help="Score CO2 against the standard in this volume."
+    ),
+    write: bool = typer.Option(False, "--write", help="Write scorecard.json into the run."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """The project scorecard's outputs, and points only where it defines a formula.
+
+    The scorecard fixes actor残存 = 50 × remaining ÷ initial and names the
+    quantities for A-D without saying what they are worth. Those axes come back
+    unscored on purpose: putting a curve here would define the criterion in code
+    instead of in the document.
+    """
+    root = Path(results_root) if results_root else default_results_root()
+    run_dir = _resolve_run(run, root)
+    habitat = Habitat(volume_m3=float(habitat_volume_m3)) if habitat_volume_m3 else SCENARIO_HABITAT
+    try:
+        card = score_run(run_dir, habitat=habitat)
+    except (NotScorable, TelemetryUnreadable) as exc:
+        print_error(str(exc))
+        raise typer.Exit(NOT_SCORABLE_EXIT) from exc
+    if write:
+        (run_dir / "scorecard.json").write_text(
+            json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    if json_output:
+        typer.echo(json.dumps(card, ensure_ascii=False, indent=2))
+        raise typer.Exit(exit_codes.SUCCESS)
+
+    gate = card["physics_gate"]
+    typer.echo(f"{card['run_id']}  actor_mode={card['actor_mode']}  gate={gate['verdict']}")
+    if not card["scorable"]:
+        typer.echo(
+            f"  検証無効: {', '.join(gate['failed_checks'])}"
+            "  — 物理ゲート不合格のランは採点しない"
+        )
+        raise typer.Exit(exit_codes.SUCCESS)
+    axes = card["axes"]
+    a = axes["actor_remaining"]
+    typer.echo(
+        f"  actor残存      {a['points']:.1f} / {a['max']}"
+        f"   ({a['actor_remaining']} / {a['actor_initial']} 人)"
+    )
+    for key, label in (("A_environment", "A 生存環境"), ("B_margin", "B 資源余裕"),
+                       ("C_judgement", "C 判断"), ("D_response", "D 応答")):
+        axis = axes[key]
+        if not axis.get("applicable", True):
+            typer.echo(f"  {label:<12}   —  / {axis['max']}   (actor操作なしのため対象外)")
+            continue
+        typer.echo(f"  {label:<12}   ?  / {axis['max']}   (点数化式が未定義。以下は材料)")
+        if key == "A_environment":
+            typer.echo(f"    co2 exposure {axis['co2_exposure_integral']}")
+            typer.echo(
+                f"    o2 deficit {axis['o2_deficit_integral']}"
+                f"   water deficit {axis['water_deficit_integral']}"
+            )
+        elif key == "C_judgement":
+            for subsystem, detail in (axis["response_latency_steps"] or {}).items():
+                latency = detail.get("latency_steps")
+                shown = f"{latency} step" if latency is not None else detail.get("reason")
+                typer.echo(f"    {subsystem:<20} {shown}")
+        elif key == "D_response":
+            for subsystem, detail in (axis["requested_processed_ratio"] or {}).items():
+                typer.echo(
+                    f"    {subsystem:<20} 要求 {detail['requested']:.4g} → 実処理"
+                    f" {detail['processed']:.4g}  比 {detail['ratio']}"
+                )
+    total = card["total"]
+    typer.echo(f"  合計           —  / {total['applicable_max']}   ({total['note']})")
     raise typer.Exit(exit_codes.SUCCESS)
