@@ -349,6 +349,12 @@ def _per_operation_capacity(run_dir: Path) -> Dict[str, Optional[float]]:
 
     A request larger than this is not a plant failure -- the plant saturates --
     it is an actor asking for what the machine cannot do, which is C's business.
+
+    Bounded by the step, because the rated-capacity invariant is: an action cannot
+    process more than the step it happens in is long. Reading a subsystem's own
+    quantum here instead would re-open, inside the scorecard, the hole the
+    invariant closed in the plant -- C would call a request "within capacity"
+    that the machine demonstrably cannot take.
     """
     path = Path(run_dir) / "scenario_config.yaml"
     if not path.is_file():
@@ -360,14 +366,24 @@ def _per_operation_capacity(run_dir: Path) -> Dict[str, Optional[float]]:
     # ARS takes a goal, not a quantity: the reference goal is the size the
     # machine is rated against, so a larger one is a request for super-rated work.
     out["air_revitalisation"] = ars.get("reference_goal_co2_kg")
-    max_o2 = ogs.get("max_o2_kg_day")
-    seconds = time_cfg.get("ogs_operation_seconds")
-    out["oxygen_generation"] = (
-        float(max_o2) * float(seconds) / 86400.0 * WATER_PER_O2
-        if max_o2 is not None and seconds is not None
-        else None
-    )
-    out["water_recovery"] = wrs.get("max_feed_l_per_operation")
+    step_seconds = time_cfg.get("step_seconds")
+
+    def _rated(rate_per_day: Any, operation_seconds: Any) -> Optional[float]:
+        if rate_per_day is None or step_seconds is None:
+            return None
+        elapsed = float(step_seconds)
+        if operation_seconds is not None:
+            elapsed = min(float(operation_seconds), elapsed)
+        return float(rate_per_day) * elapsed / 86400.0
+
+    ogs_o2 = _rated(ogs.get("max_o2_kg_day"), time_cfg.get("ogs_operation_seconds"))
+    out["oxygen_generation"] = ogs_o2 * WATER_PER_O2 if ogs_o2 is not None else None
+    # Two ceilings now: the batch cap per action, and the rated throughput. The
+    # smaller is what one action can take; at this step length it is the rating.
+    wrs_rated = _rated(wrs.get("capacity_l_day"), time_cfg.get("wrs_operation_seconds"))
+    wrs_batch = wrs.get("max_feed_l_per_operation")
+    wrs_limits = [float(v) for v in (wrs_rated, wrs_batch) if v is not None]
+    out["water_recovery"] = min(wrs_limits) if wrs_limits else None
     return out
 
 
