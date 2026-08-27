@@ -156,7 +156,18 @@ def test_team_rearms_ars_when_ineffective():
     assert any(cmd.kind == "air_revitalisation" for cmd in outcome1.commands)
 
 
-def test_team_rearms_ars_after_co2_drops_below_threshold():
+def test_team_keeps_ars_running_until_the_recovery_target():
+    """Recovery ends below the alarm line, not on it.
+
+    This asserted the opposite until the rated-capacity invariant landed: the
+    latch cleared the moment CO2 dipped under co2_storage_high_kg, and the
+    warning band was one-shot. Both were survivable while a single ARS action
+    removed four steps of crew CO2. At the rated margin it removes 1.082 steps'
+    worth, so stopping on the line hands the cabin straight back to the band on
+    the next breath -- and two consecutive steps in the band costs an occupant.
+    Measured over 50 steps, the old rule left CO2 climbing from 1.3 to 3.0 kg
+    with 37 consecutive steps in the band; recovering to a target holds it out.
+    """
     team = SsosEclssLoopTeam(_team_config())
     backend = LoopMockEclssBackend(
         {
@@ -165,27 +176,35 @@ def test_team_rearms_ars_after_co2_drops_below_threshold():
         }
     )
     co2_high = float(team.policy["co2_storage_high_kg"])
+    target = co2_high - float(team.policy.get("co2_recovery_margin_kg", 0.25))
 
     snap = backend.poll_telemetry()
-    obs0 = EclssLoopObservation(step=0, telemetry=snap, health={"overall": "warning"})
-    outcome0 = team.run_step(backend, obs0)
+    outcome0 = team.run_step(
+        backend, EclssLoopObservation(step=0, telemetry=snap, health={"overall": "warning"})
+    )
     team.apply_outcome(backend, outcome0)
     assert team.state.ars_invoked is True
 
+    # Under the alarm line, but not yet recovered: keep running.
     backend.advance_step()
     snap1 = backend.poll_telemetry()
-    assert snap1.co2_storage_kg < co2_high
-    obs1 = EclssLoopObservation(step=1, telemetry=snap1, health={"overall": "safe"})
-    team.run_step(backend, obs1)
-    assert team.state.ars_invoked is False
+    assert target < snap1.co2_storage_kg < co2_high
+    outcome1 = team.run_step(
+        backend, EclssLoopObservation(step=1, telemetry=snap1, health={"overall": "safe"})
+    )
+    assert any(cmd.kind == "air_revitalisation" for cmd in outcome1.commands)
+    assert team.state.ars_invoked is True
+    team.apply_outcome(backend, outcome1)
 
-    for _ in range(4):
-        backend.advance_step()
-    snap_high = backend.poll_telemetry()
-    assert snap_high.co2_storage_kg >= co2_high
-    obs_high = EclssLoopObservation(step=5, telemetry=snap_high, health={"overall": "warning"})
-    outcome_high = team.run_step(backend, obs_high)
-    assert any(cmd.kind == "air_revitalisation" for cmd in outcome_high.commands)
+    # At the recovery target: the episode closes and ARS stands down.
+    backend.advance_step()
+    snap2 = backend.poll_telemetry()
+    assert snap2.co2_storage_kg <= target
+    outcome2 = team.run_step(
+        backend, EclssLoopObservation(step=2, telemetry=snap2, health={"overall": "safe"})
+    )
+    assert team.state.ars_invoked is False
+    assert not any(cmd.kind == "air_revitalisation" for cmd in outcome2.commands)
 
 
 def test_team_escalates_ars_on_critical_band():

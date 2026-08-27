@@ -71,11 +71,17 @@ def _resolve_max_actions_per_step(raw: Any, *, team_count: int) -> int:
 @dataclass
 class EclssLoopTeamState:
     alert_sent: bool = False
+    #: A CO2 recovery episode is under way -- ARS has been dispatched and the
+    #: cabin has not yet come back to the recovery target. Used to mean "already
+    #: fired once this excursion", which stalled recovery once the rated-capacity
+    #: invariant left ARS with 8% headroom instead of 4x.
     ars_invoked: bool = False
     ars_critical_escalated: bool = False
     co2_requested: bool = False
     ogs_invoked: bool = False
     wrs_invoked: bool = False
+    #: Diagnostic only since recovery gained hysteresis: the CO2 reading at the
+    #: moment ARS was dispatched. It no longer drives re-arming.
     co2_at_ars_dispatch: Optional[float] = None
     o2_at_ogs_dispatch: Optional[float] = None
 
@@ -267,20 +273,19 @@ class SsosEclssLoopTeam(Team):
         co2_high: float,
         o2_low: float,
     ) -> None:
-        """Re-arm one-shot flags when telemetry returns to the safe band."""
-        if co2 is not None and co2 < co2_high:
+        """Close a recovery episode once telemetry is back inside the safe band.
+
+        CO2 recovery ends at ``co2_high - co2_recovery_margin_kg``, not at
+        ``co2_high``. Stopping at the alarm line leaves the cabin sitting on it,
+        and the next step's metabolism puts it straight back over -- which is a
+        band the occupant-survival rules charge for after two consecutive steps.
+        """
+        margin = max(0.0, float(self.policy.get("co2_recovery_margin_kg", 0.25)))
+        if co2 is not None and co2 <= co2_high - margin:
             self.state.ars_invoked = False
             self.state.ars_critical_escalated = False
             self.state.alert_sent = False
             self.state.co2_at_ars_dispatch = None
-        elif (
-            self.state.ars_invoked
-            and co2 is not None
-            and self.state.co2_at_ars_dispatch is not None
-            and co2 >= self.state.co2_at_ars_dispatch
-        ):
-            # ARS had no effect — allow retry on the next step.
-            self.state.ars_invoked = False
         if o2 is not None and o2 > o2_low:
             self.state.ogs_invoked = False
             self.state.co2_requested = False
@@ -308,12 +313,13 @@ class SsosEclssLoopTeam(Team):
         commands: List[EclssOperationalCommand] = []
 
         in_critical = co2 is not None and co2 >= co2_critical
-        # High/warning band is one-shot (ars_invoked). Critical band keeps
-        # recovering until CO₂ leaves critical — otherwise a partial ARS drop
-        # that stays >= critical stalls with both latches set.
-        need_ars = co2 is not None and co2 >= co2_high and (
-            not self.state.ars_invoked or in_critical
-        )
+        # Start on crossing co2_high, then keep running every step until the
+        # episode closes at the recovery target. The warning band used to be
+        # one-shot, which worked only while a single ARS action removed four
+        # steps of crew CO2; under the rated-capacity invariant it removes 1.082
+        # steps' worth, so one shot no longer recovers anything and the cabin
+        # climbed away from the alarm line instead of returning to it.
+        need_ars = co2 is not None and (co2 >= co2_high or self.state.ars_invoked)
         if need_ars:
             ars_payload = dict(self.policy.get("ars_goal", {}))
             if in_critical:

@@ -29,6 +29,13 @@ actor:
   policy:
     request_co2_before_ogs: false  # if true, explicit /ars/request_co2 before OGS (can double-debit on LoopMock)
     request_co2_amount: 0.025  # [kg] CO2 requested when the flag above is true
+    # A CO2 recovery episode ends at co2_storage_high_kg minus this, not at the
+    # threshold itself: stopping on the alarm line leaves the next step's
+    # metabolism to push straight back over it, and two consecutive steps in the
+    # band costs an occupant. 0.25 kg is ~4.3 steps of crew-4 CO2 -- and at the
+    # rated ARS margin (1.082x) it is the smallest target that still buys every
+    # step of ARS the run can use; a wider one changes nothing in 50 steps.
+    co2_recovery_margin_kg: 0.25  # [kg] recover to co2_storage_high_kg - this
     wrs_feed_trigger_l: 0.5  # [L] start WRS when urine+grey buffer ≥ this
     ars_goal:  # air_revitalisation payload
       initial_co2_mass: 1.8  # [kg] plant_sim ARS scale = this / plant_sim.ars.reference_goal_co2_kg
