@@ -52,6 +52,7 @@ class PlantSimConfig:
     # --- WRS ---
     wrs_urine_recovery: float = 0.98        # Q3 (BPA-inclusive)
     wrs_grey_recovery: float = 0.90
+    wrs_capacity_l_day: float = 13.5        # rated feed throughput (urine + grey)
     wrs_max_feed_l_per_operation: float = 10.0
 
     # --- initial inventories ---
@@ -92,6 +93,7 @@ class PlantSimConfig:
             "ars_capacity_kg_day",
             "ars_reference_goal_co2_kg",
             "ogs_max_o2_kg_day",
+            "wrs_capacity_l_day",
             "wrs_max_feed_l_per_operation",
         ):
             req(getattr(self, name) > 0, f"{name} must be > 0")
@@ -213,6 +215,7 @@ class PlantSimConfig:
             ),
             wrs_urine_recovery=pick(wrs, "urine_recovery", "wrs_urine_recovery"),
             wrs_grey_recovery=pick(wrs, "grey_recovery", "wrs_grey_recovery"),
+            wrs_capacity_l_day=pick(wrs, "capacity_l_day", "wrs_capacity_l_day"),
             wrs_max_feed_l_per_operation=pick(
                 wrs, "max_feed_l_per_operation", "wrs_max_feed_l_per_operation"
             ),

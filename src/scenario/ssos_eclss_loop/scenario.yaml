@@ -37,9 +37,15 @@ thresholds:  # storage bands for health + labeled_rule_base triggers
 plant_sim:
   time:
     step_seconds: 1200  # [s] metabolism / observation interval (20 min)
-    ars_operation_seconds: 4800  # [s] ARS action quantum (nameplate = capacity × this / 86400)
+    # Action quanta. The rated-capacity invariant clamps each to step_seconds, so a
+    # quantum longer than a step buys nothing: 4800 runs as 1200 and says so in
+    # telemetry (`elapsed_seconds`, `limited_by: rated_step_capacity`). It is kept
+    # at 4800 on purpose -- that is what keeps the clamp live in the default config
+    # instead of dead code, and it is the entry point for modelling an ARS action as
+    # a 4-step commitment (EXP-004).
+    ars_operation_seconds: 4800  # [s] ARS action quantum; clamped to step_seconds
     ogs_operation_seconds: 1200  # [s] OGS action quantum
-    wrs_operation_seconds: 1200  # [s] reserved; WRS feed cap is max_feed_l_per_operation
+    wrs_operation_seconds: 1200  # [s] WRS action quantum (with wrs.capacity_l_day)
   crew:
     size: 4  # [person] occupant N; must match agents.yaml actor.team.count when actors run
     activity_factor: 1.0  # [-] scales all crew rates (1=nominal, 4=exercise, 0.7=sleep)
@@ -60,6 +66,14 @@ plant_sim:
   wrs:
     urine_recovery: 0.98  # [-] potable recovered from urine feed
     grey_recovery: 0.90  # [-] potable recovered from grey / condensate feed
+    # Rated feed throughput, the WRS counterpart of ars.capacity_kg_day. Derived,
+    # not quoted: NASA states the ISS UPA was sized for "a nominal load of 9 kg/day
+    # ... the expected quantity for a 6-crew load" (ICES-2023-097 / ICES-2026-425),
+    # and 9.0 is exactly crew.urine_kg_day_person 1.50 x 6 -- so the convention is
+    # "the 6-crew load of everything the box takes in". run_wrs merges UPA and WPA
+    # into one box fed by urine AND grey, so the same convention gives
+    # (1.50 + 0.75) x 6 = 13.5. No NASA source states a WPA design throughput.
+    capacity_l_day: 13.5  # [L/day] urine + grey the WRS may process, per rated time
     max_feed_l_per_operation: 10.0  # [L] urine + grey batch cap per WRS action
   survival:
     enabled: true  # plant_sim only; sensitivity sweep leaves this false

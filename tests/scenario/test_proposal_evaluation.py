@@ -18,6 +18,8 @@ from scenario.ssos_eclss_loop.trajectory_metrics import (
     from_frozen_baseline,
     trajectory_metrics,
 )
+from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
+from scenario.ssos_eclss_loop.scorecard import score_run
 from scenario.ssos_eclss_loop.proposal_evaluation import (
     MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT,
     ProposalEvaluationError,
@@ -323,18 +325,42 @@ def test_yardstick_changes_ignores_non_threshold_targets():
     ]}) == []
 
 
-def test_a_proposal_that_buys_super_rated_capacity_is_refused(tmp_path, baseline):
-    """PlantModel scales ARS removal by goal/reference with no ceiling, so an
-    action_profile proposal can ask for throughput the hardware does not have.
-    The gate catches it and the arm is refused rather than credited.
+def test_a_proposal_can_no_longer_buy_super_rated_capacity(tmp_path, baseline):
+    """This asserted a refusal until the rated-capacity invariant landed.
 
-    The proposal the shipped labeled proposer emits (initial_co2_mass 2.25,
-    1.25x the reference) is already over the line.
+    PlantModel used to scale ARS removal by goal/reference with no ceiling, so
+    initial_co2_mass 1800 bought a thousand times the rated machine and the physics
+    gate was the only thing standing in front of it -- the arm was refused.
+
+    The invariant removes the capability, so the gate has nothing to catch and the
+    run is evaluated normally. That is the intended end state, and it is the reason
+    capacity_bounds should now be unable to fire: if it ever does, the invariant is
+    broken. What has NOT changed is that asking for 1000x rated is a bad judgement,
+    and the scorecard's C axis still scores it as one -- the harm is gone, the
+    mistake is not.
     """
     _replace_proposal(baseline, [
         {"change_kind": "action_profile",
          "payload": {"subsystem": "ars", "action": "air_revitalisation",
                      "fields": {"initial_co2_mass": 1800.0}}},
     ])
-    with pytest.raises(ProposalEvaluationError, match="capacity_bounds"):
-        evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="over")
+    ev = evaluate_proposal(baseline, results_root=tmp_path, run_id_prefix="over")
+
+    treated = Path(ev["pairs"][0]["treated"]["run_dir"])
+    gate = evaluate_physics_gate(treated)
+    assert gate_passed(gate)
+    capacity = next(c for c in gate["checks"] if c["name"] == "capacity_bounds")
+    assert capacity["status"] == "pass"
+    assert "ars 1.0" in capacity["detail"] or "ars 0.9" in capacity["detail"], capacity["detail"]
+
+    # Against the control arm of the same pair, so the claim is "this proposal is
+    # scored worse for asking" and not a threshold picked to fit. sizing_score is a
+    # mean over every sized command, so ARS at 0.001 of rated is diluted by the OGS
+    # and WRS commands around it -- the comparison is what carries the meaning.
+    control = Path(ev["pairs"][0]["control"]["run_dir"])
+    sizing = score_run(treated)["axes"]["C_judgement"]["request_sizing"]
+    control_sizing = score_run(control)["axes"]["C_judgement"]["request_sizing"]
+    assert sizing["oversized_by_kind"].get("air_revitalisation", 0) > 0
+    assert not control_sizing["oversized_by_kind"].get("air_revitalisation")
+    assert sizing["within_capacity_fraction"] < control_sizing["within_capacity_fraction"]
+    assert sizing["sizing_score"] < control_sizing["sizing_score"]

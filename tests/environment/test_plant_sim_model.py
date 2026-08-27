@@ -206,17 +206,55 @@ def test_o2_shortfall_recorded_when_depleted():
 def test_ars_capacity_and_capture():
     m = _model(initial_cabin_co2_kg=5.0)
     r = m.run_ars(m.config.ars_reference_goal_co2_kg)  # scale = 1.0
-    cap = per_interval(m.config.ars_capacity_kg_day, m.config.ars_operation_seconds)
+    # Rated against the step, not against ars_operation_seconds: a 4800 s quantum
+    # cannot bill four steps of throughput to the one step it happens in.
+    cap = per_interval(m.config.ars_capacity_kg_day, m.config.step_seconds)
     assert r["co2_removed_kg"] == pytest.approx(cap, **APPROX)
+    assert r["elapsed_seconds"] == pytest.approx(m.config.step_seconds, **APPROX)
     assert r["captured_co2_kg"] == pytest.approx(cap * m.config.ars_capture_efficiency, **APPROX)
     assert r["captured_co2_kg"] + r["vented_co2_kg"] == pytest.approx(r["co2_removed_kg"], **APPROX)
 
 
-def test_ars_goal_scaling():
+def test_ars_goal_cannot_buy_capacity():
+    """The goal says "more urgently". It used to say "with a bigger machine".
+
+    This test asserted the opposite until the rated-capacity invariant landed:
+    scale = 2.0 removed twice the rating. That is the hole an audit walked through
+    with initial_co2_mass = 1800, which bought 1000x rated and was reported as an
+    improvement. The goal is still carried and still reported as ``ordered_kg``;
+    it just no longer moves the ceiling.
+    """
+    cap = per_interval(PlantSimConfig().ars_capacity_kg_day, PlantSimConfig().step_seconds)
+    for scale in (2.0, 1000.0):
+        m = _model(initial_cabin_co2_kg=5.0e6)
+        r = m.run_ars(scale * m.config.ars_reference_goal_co2_kg)
+        assert r["goal_scale"] == pytest.approx(scale, **APPROX)
+        assert r["ordered_kg"] > cap  # the order is preserved, and visible
+        assert r["co2_removed_kg"] == pytest.approx(cap, **APPROX)
+        assert r["limited_by"] == "rated_step_capacity"
+
+
+def test_ars_rating_is_shared_across_actions_in_one_step():
+    """A per-action bound is defeated by issuing the action twice (EXP-012)."""
     m = _model(initial_cabin_co2_kg=5.0)
-    r = m.run_ars(2 * m.config.ars_reference_goal_co2_kg)  # scale = 2.0
-    cap = per_interval(m.config.ars_capacity_kg_day, m.config.ars_operation_seconds)
-    assert r["co2_removed_kg"] == pytest.approx(2 * cap, **APPROX)
+    cap = per_interval(m.config.ars_capacity_kg_day, m.config.step_seconds)
+    total = sum(m.run_ars(m.config.ars_reference_goal_co2_kg)["co2_removed_kg"] for _ in range(6))
+    assert total == pytest.approx(cap, **APPROX)
+    assert m.state.co2_removed_this_step_kg == pytest.approx(cap, **APPROX)
+
+
+def test_advance_step_restores_the_rated_allowance():
+    m = _model(initial_cabin_co2_kg=5.0)
+    cap = per_interval(m.config.ars_capacity_kg_day, m.config.step_seconds)
+    m.run_ars(m.config.ars_reference_goal_co2_kg)
+    assert m.run_ars(m.config.ars_reference_goal_co2_kg)["co2_removed_kg"] == pytest.approx(
+        0.0, abs=1e-15
+    )
+    m.advance_step()
+    assert m.state.co2_removed_this_step_kg == pytest.approx(0.0, abs=1e-15)
+    assert m.run_ars(m.config.ars_reference_goal_co2_kg)["co2_removed_kg"] == pytest.approx(
+        cap, **APPROX
+    )
 
 
 def test_ars_cannot_remove_more_than_inventory():
@@ -285,12 +323,15 @@ def test_sabatier_partial_when_co2_limited():
 # WRS
 # --------------------------------------------------------------------------- #
 def test_wrs_recovers_from_buffers():
-    m = _model(initial_urine_buffer_l=5.0, initial_grey_water_l=2.0)
-    r = m.run_wrs(2.0)
-    assert r["urine_feed_l"] == pytest.approx(2.0, **APPROX)
-    assert r["grey_feed_l"] == pytest.approx(2.0, **APPROX)
-    assert r["urine_recovered_l"] == pytest.approx(2.0 * m.config.wrs_urine_recovery, **APPROX)
-    assert r["grey_recovered_l"] == pytest.approx(2.0 * m.config.wrs_grey_recovery, **APPROX)
+    # Feeds sized under the step rating (13.5 L/day -> 0.1875 L/step), so this
+    # test still measures the recovery ledger and not the new ceiling.
+    m = _model(initial_urine_buffer_l=5.0, initial_grey_water_l=0.05)
+    r = m.run_wrs(0.05)
+    assert r["urine_feed_l"] == pytest.approx(0.05, **APPROX)
+    assert r["grey_feed_l"] == pytest.approx(0.05, **APPROX)
+    assert r["urine_recovered_l"] == pytest.approx(0.05 * m.config.wrs_urine_recovery, **APPROX)
+    assert r["grey_recovered_l"] == pytest.approx(0.05 * m.config.wrs_grey_recovery, **APPROX)
+    assert r["fully_satisfied"] is True
     # WRS ledger: feed = recovered + brine
     assert r["urine_feed_l"] + r["grey_feed_l"] == pytest.approx(
         r["recovered_water_l"] + r["brine_loss_l"], **APPROX
@@ -307,11 +348,31 @@ def test_wrs_does_not_create_water_beyond_buffer():
 
 
 def test_wrs_capacity_limits_total_feed():
+    """WRS had no throughput rating at all -- only a 10 L batch cap, which is 80x
+    what crew 4 puts into the buffers in a step. This asserted that batch cap."""
     m = _model(initial_urine_buffer_l=100.0, initial_grey_water_l=100.0)
+    rated = per_interval(m.config.wrs_capacity_l_day, m.config.step_seconds)
     r = m.run_wrs(100.0)
-    assert r["urine_feed_l"] + r["grey_feed_l"] == pytest.approx(
-        m.config.wrs_max_feed_l_per_operation, **APPROX
-    )
+    assert rated < m.config.wrs_max_feed_l_per_operation  # the rating binds first
+    assert r["urine_feed_l"] + r["grey_feed_l"] == pytest.approx(rated, **APPROX)
+    assert r["processed_feed_l"] == pytest.approx(rated, **APPROX)
+    assert r["limited_by"] == ["wrs_capacity"]
+
+
+def test_wrs_rating_is_shared_across_actions_in_one_step():
+    m = _model(initial_urine_buffer_l=100.0, initial_grey_water_l=100.0)
+    rated = per_interval(m.config.wrs_capacity_l_day, m.config.step_seconds)
+    total = sum(m.run_wrs(100.0)["processed_feed_l"] for _ in range(4))
+    assert total == pytest.approx(rated, **APPROX)
+    m.advance_step()
+    assert m.run_wrs(100.0)["processed_feed_l"] == pytest.approx(rated, **APPROX)
+
+
+def test_wrs_reports_an_empty_buffer():
+    m = _model(initial_urine_buffer_l=0.0, initial_grey_water_l=0.0)
+    r = m.run_wrs(0.05)
+    assert r["fully_satisfied"] is False
+    assert r["limited_by"] == ["urine_buffer"]
 
 
 # --------------------------------------------------------------------------- #

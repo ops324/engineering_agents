@@ -137,7 +137,9 @@ def test_nameplates_are_positive_machine_ratings():
     assert o2 > 0.0
     assert water > 0.0
     assert wrs_nameplate_l(2.0, plant) > 0.0
-    assert ars_nameplate_kg(3.6, plant) == pytest.approx(2 * ars_nameplate_kg(1.8, plant))
+    # Used to assert 3.6 buys twice 1.8. Under the rated-capacity invariant the
+    # nameplate is a property of the machine, so a bigger goal reads the same.
+    assert ars_nameplate_kg(3.6, plant) == pytest.approx(ars_nameplate_kg(1.8, plant))
 
 
 def test_sweep_demand_scales_and_ops_flat_vs_n():
@@ -278,11 +280,10 @@ def test_demand_and_nameplate_match_plant_model_probes():
 
     dt = plant.step_seconds / 86400.0
     assert o2 == pytest.approx(4 * plant.activity_factor * plant.o2_kg_day_person * dt)
+    # Rated against the step, and without the goal scale: both used to be in here,
+    # and between them they were the whole of the over-capacity defect.
     assert ars_nameplate_kg(ars_goal, plant) == pytest.approx(
-        plant.ars_capacity_kg_day
-        * plant.ars_operation_seconds
-        / 86400.0
-        * (ars_goal / plant.ars_reference_goal_co2_kg)
+        plant.ars_capacity_kg_day * plant.step_seconds / 86400.0
     )
     ogs_o2, ogs_h2o = ogs_nameplate(ogs_water, plant)
     unconstrained = PlantModel(
@@ -290,6 +291,11 @@ def test_demand_and_nameplate_match_plant_model_probes():
     ).run_ogs(ogs_water)
     assert ogs_o2 == pytest.approx(unconstrained["o2_generated_kg"])
     assert ogs_h2o == pytest.approx(water_kg_to_l(unconstrained["processed_water_kg"]))
+    # wrs_max_feed_l_per_operation used to be the only ceiling WRS had. It is still
+    # a ceiling, but wrs_capacity_l_day is far below it at this step length, so the
+    # rating is what the nameplate now reads.
+    wrs_rated_l = plant.wrs_capacity_l_day * plant.step_seconds / 86400.0
+    assert wrs_rated_l < plant.wrs_max_feed_l_per_operation
     assert wrs_nameplate_l(wrs_urine, plant) == pytest.approx(
-        min(wrs_urine, plant.wrs_max_feed_l_per_operation) * plant.wrs_urine_recovery
+        min(wrs_urine, wrs_rated_l) * plant.wrs_urine_recovery
     )
