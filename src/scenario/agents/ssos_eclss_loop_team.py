@@ -730,6 +730,9 @@ _ECLSS_OPERATIONAL_LEVERS = """\
   initial_moisture_content (percent 0–100), initial_contaminants (percent 0–100).
 - oxygen_generation: OGS action — payload fields input_water_mass (kg),
   iodine_concentration (mg/L).
+- water_recovery: WRS action — payload field urine_volume (L) drawn from the urine
+  buffer; grey water is taken alongside it, up to the batch capacity. Reclaims
+  potable water into /product_water.
 - request_co2: Service call — payload {"amount": <kg>} optional Sabatier feedstock;
   default policy leaves this to OGS-internal /ars/request_co2 (use only when
   request_co2_before_ogs is explicitly enabled or discourse justifies it).
@@ -737,11 +740,26 @@ _ECLSS_OPERATIONAL_LEVERS = """\
 Actions are asynchronous; issue only commands justified by Telemetry and team discourse."""
 
 
+def _urine_buffer_l(telemetry: Any) -> float:
+    """The urine buffer, off raw_topics.plant_sim.
+
+    The labeled rule base triggers WRS on urine_buffer_l + grey, and read it from
+    here while the llm arm's situation string carried only grey -- so the llm arm
+    was asked to operate a subsystem on half of the reading the rule arm used.
+    """
+    raw_topics = getattr(telemetry, "raw_topics", None) or {}
+    plant_sim = raw_topics.get("plant_sim") if isinstance(raw_topics, dict) else None
+    if isinstance(plant_sim, dict):
+        return float(plant_sim.get("urine_buffer_l") or 0.0)
+    return 0.0
+
+
 def build_llm_situation(obs: EclssLoopObservation) -> str:
     t = obs.telemetry
     telemetry = (
         f"step={obs.step}, co2_storage_kg={t.co2_storage_kg}, o2_storage_kg={t.o2_storage_kg}, "
         f"product_water_reserve_l={t.product_water_reserve_l}, "
+        f"urine_buffer_l={_urine_buffer_l(t)}, "
         f"grey_water_collected_l={t.grey_water_collected_l}, "
         f"ars_failure_enabled={t.ars_failure_enabled}, "
         f"ogs_failure_enabled={t.ogs_failure_enabled}, wrs_failure_enabled={t.wrs_failure_enabled}"

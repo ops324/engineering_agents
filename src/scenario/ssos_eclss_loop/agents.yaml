@@ -6,7 +6,8 @@ actor:
     id_prefix: eclss_actor  # ids are eclss_actor_1 .. N
     persona: |
       SSOS ECLSS actor. Read storage telemetry (/co2_storage, /o2_storage);
-      coordinate ARS air_revitalisation and OGS oxygen_generation via backend actions.
+      coordinate ARS air_revitalisation, OGS oxygen_generation and WRS water_recovery
+      via backend actions.
       Sabatier CO2 feedstock is normally left to OGS (internal /ars/request_co2); issue an
       explicit request_co2 before OGS only when policy request_co2_before_ogs is true.
       No topology changes at runtime.
