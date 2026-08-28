@@ -220,30 +220,65 @@ def _run_with(tmp_path, run_id, extra):
 
 
 @pytest.mark.parametrize(
-    "run_id, extra, expected",
+    "run_id, extra, expected, standard_still_scores",
     [
-        ("moved_thresholds", {"thresholds": {"co2_storage_high_kg": 99.0}}, "thresholds"),
+        (
+            "moved_thresholds",
+            {"thresholds": {"co2_storage_high_kg": 99.0}},
+            "thresholds",
+            True,
+        ),
         (
             "moved_bands",
             {"plant_sim": {"survival": {"bands": {"product_water_low_l": 0.001}}}},
             "plant_sim.survival.bands",
+            False,
         ),
         (
             "attrition_off",
             {"plant_sim": {"survival": {"enabled": False}}},
             "plant_sim.survival.enabled",
+            False,
+        ),
+        (
+            "dwell_table_zeroed",
+            {"plant_sim": {"survival": {"o2": {"warning_loss": 0, "critical_loss": 0}}}},
+            "plant_sim.survival.o2",
+            False,
+        ),
+        (
+            "dwell_divisor_raised",
+            {"plant_sim": {"survival": {"co2": {"warning_divisor": 99999}}}},
+            "plant_sim.survival.co2",
+            False,
         ),
     ],
 )
 def test_every_route_to_the_bar_is_refused_not_just_thresholds(
-    tmp_path, run_id, extra, expected
+    tmp_path, run_id, extra, expected, standard_still_scores
 ):
-    """Two earlier versions of this guard were narrow in the same way: each
+    """Three earlier versions of this guard were narrow in the same way: each
     picked one route to the bar and assumed it was the only one. thresholds is
     not the bar -- an audit took a run from 0/4 crew to 4/4, 29.4 to 78.1 of 90,
     through plant_sim.survival.bands with thresholds untouched, and
-    survival.enabled: false does it by switching attrition off outright. The
-    standard yardstick stays available for all of them.
+    survival.enabled: false does it by switching attrition off outright.
+
+    The third (EXP-021, 2026-08-29) went around both by leaving them alone and
+    zeroing the dwell table beside them: ``*_loss: 0`` requests no occupant and
+    ``divisor: 99999`` floors ``alive // divisor``, so either does what
+    ``enabled: false`` does. 2/4 crew to 4/4, 46.9 to 71.3 of 90, and the cabin
+    left worse -- peak CO2 8.81 to 12.06 against a critical band of 8.0. Hence
+    the whole ``survival`` subtree is diffed rather than enumerated, and the
+    last two cases here are that route.
+
+    ``standard_still_scores`` is the other half of the correction. That yardstick
+    used to be the way out of every refusal -- and it never ran the check at all,
+    so the escape hatch the error message named was the unguarded one. It is a
+    real way out only for ``thresholds``, which stops deciding anything once CO2
+    is scored against NASA. Anything under ``survival`` set attrition, which is
+    the 50-point axis baked into the run, and the o2/water bands
+    ``inventory_metrics`` reads under either yardstick. No yardstick can rescue
+    those.
     """
     moved = _run_with(tmp_path, run_id, extra)
     recorded = json.loads((moved / "summary.json").read_text(encoding="utf-8"))
@@ -252,7 +287,62 @@ def test_every_route_to_the_bar_is_refused_not_just_thresholds(
     refused = runner.invoke(app, ["scorecard", str(moved), "--yardstick", "run"])
     assert refused.exit_code == 2
     assert expected in (refused.output or refused.stderr or '')
-    assert runner.invoke(app, ["scorecard", str(moved)]).exit_code == 0
+
+    standard = runner.invoke(app, ["scorecard", str(moved)])
+    if standard_still_scores:
+        assert standard.exit_code == 0
+    else:
+        assert standard.exit_code == 2
+        assert expected in (standard.output or standard.stderr or '')
+
+
+def test_an_easier_scenario_is_recorded_even_though_the_bar_is_clean(tmp_path):
+    """A clean bar says the score was not gamed. It does not say the scenario
+    was the published one.
+
+    An audit (EXP-021) scored a --actor-mode none run at 90.000 of 90 -- 7.77
+    above the published rule arm -- on four keys that are not part of the bar:
+    the three ``simulation.initial_*`` inventories and
+    ``plant_sim.crew.activity_factor``. scoring_bar_modified was empty and the
+    physics gate passed, both correctly. Nothing anywhere said the run had been
+    made easy, and the number was read off the scorecard.
+    """
+    easy = _run_with(
+        tmp_path,
+        "made_easy",
+        {
+            "simulation": {"steps": 30, "initial_o2_storage_kg": 200.0},
+            "plant_sim": {"crew": {"activity_factor": 0.0}},
+        },
+    )
+    summary = json.loads((easy / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scoring_bar_modified"] == []
+    assert summary["operating_point_modified"] == [
+        "simulation.initial_o2_storage_kg",
+        "plant_sim.crew.activity_factor",
+        "inject_failures",  # from OVERRIDES, and it belongs on this list too
+    ]
+
+    scored = runner.invoke(app, ["scorecard", str(easy), "--yardstick", "run"])
+    assert scored.exit_code == 0
+    assert "運用点を変更" in scored.stdout
+    assert "plant_sim.crew.activity_factor" in scored.stdout
+
+
+def test_run_knobs_are_not_read_as_a_changed_operating_point(tmp_path):
+    """steps and seed select a run; they do not describe the plant. Flagging
+    them would put the warning on every sweep and teach everyone to ignore it.
+    seed is doubly inert here -- EXP-021 found 101, 202 and 999 give
+    byte-identical telemetry, so it does not reach the deterministic arm at all.
+    """
+    plain = _run_with(tmp_path, "plain", {"simulation": {"steps": 12}})
+    summary = json.loads((plain / "summary.json").read_text(encoding="utf-8"))
+    # inject_failures is on in OVERRIDES and *is* an operating point change.
+    assert summary["operating_point_modified"] == ["inject_failures"]
+
+    scored = runner.invoke(app, ["scorecard", str(plain), "--yardstick", "run"])
+    assert "simulation.steps" not in scored.stdout
+    assert "simulation.seed" not in scored.stdout
 
 
 def test_a_run_predating_the_record_is_scored_but_marked_unverified(tmp_path, run_dir):

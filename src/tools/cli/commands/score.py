@@ -71,6 +71,20 @@ def _bar_moved_by(run_dir: Path) -> Optional[List[str]]:
         return [str(m) for m in moved]
     return None if summary.get("apply_proposals_path") is None else ["applied proposals"]
 
+
+def _operating_point_moved_by(run_dir: Path) -> Optional[List[str]]:
+    """Which parts of the operating point the run changed. [] = none.
+
+    None means the run predates the record. Distinct from the bar: a clean bar
+    says the score was not gamed, not that the scenario was the published one.
+    """
+    try:
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    changed = summary.get("operating_point_modified")
+    return None if changed is None else [str(c) for c in changed]
+
 def _build_yardstick(
     *, baseline: Optional[str], habitat_volume_m3: Optional[float], root: Path
 ) -> Yardstick:
@@ -397,16 +411,30 @@ def scorecard(
         )
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    moved: Optional[List[str]] = None
-    if yardstick == "run":
-        moved = _bar_moved_by(run_dir)
-        if moved:
-            print_error(
-                f"this run moved its own bar ({', '.join(moved)}), so scoring it "
-                "against that bar grades it against a line it drew for itself "
-                "(EXP-010). Score it with --yardstick standard."
-            )
-            raise typer.Exit(exit_codes.USER_ERROR)
+    moved = _bar_moved_by(run_dir)
+    # Both yardsticks are checked, because they are not blocked by the same
+    # thing. Under ``standard`` CO2 is scored against NASA at a habitat volume,
+    # so a moved ``thresholds`` no longer decides anything -- but
+    # ``plant_sim.survival`` still sets attrition, which is the 50-point axis
+    # baked into the run, and the o2/water bands ``inventory_metrics`` reads
+    # under either yardstick. The refusal below used to name ``--yardstick
+    # standard`` as the way out while that path never ran this check at all
+    # (EXP-021): the escape hatch it pointed at was the unguarded one.
+    survival_moved = [m for m in (moved or []) if m.startswith("plant_sim.survival")]
+    blocking = list(moved or []) if yardstick == "run" else survival_moved
+    if blocking:
+        remedy = (
+            "Score it with --yardstick standard."
+            if yardstick == "run" and not survival_moved
+            else "No yardstick can score it: attrition and the o2/water bands "
+            "came from the moved values. Re-run without moving them."
+        )
+        print_error(
+            f"this run moved its own bar ({', '.join(blocking)}), so scoring it "
+            "against that bar grades it against a line it drew for itself "
+            f"(EXP-010). {remedy}"
+        )
+        raise typer.Exit(exit_codes.USER_ERROR)
     habitat = (
         None
         if yardstick == "run"
@@ -423,6 +451,12 @@ def scorecard(
             card["yardstick"] += " (predates scoring_bar_modified -- unverified)"
     else:
         card["yardstick"] = f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
+    # Both belong on the scoring artifact, not only in summary.json. An audit
+    # (EXP-021) found scorecard.json carried neither, so a card could be read --
+    # or pasted into a comparison -- with no way to ask whether the run had
+    # moved its bar or simply run an easier scenario.
+    card["scoring_bar_modified"] = moved
+    card["operating_point_modified"] = _operating_point_moved_by(run_dir)
     if write:
         (run_dir / "scorecard.json").write_text(
             json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -434,6 +468,12 @@ def scorecard(
     gate = card["physics_gate"]
     typer.echo(f"{card['run_id']}  actor_mode={card['actor_mode']}  gate={gate['verdict']}")
     typer.echo(f"  yardstick: {card['yardstick']}")
+    # Printed, not just recorded: the audit's 90.000 no-op was read off this
+    # very output, and nothing on it said the scenario had been made easier.
+    operating_point = card.get("operating_point_modified")
+    if operating_point:
+        typer.echo(f"  ⚠ 運用点を変更: {', '.join(operating_point)}")
+        typer.echo("    — 既定の運用点で走った run と直接比較できない")
     if not card["scorable"]:
         typer.echo(
             f"  検証無効: {', '.join(gate['failed_checks'])}"

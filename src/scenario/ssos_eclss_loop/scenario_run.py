@@ -271,11 +271,69 @@ def _scoring_bar_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -
         moved.append("thresholds")
     pristine_survival = (pristine.get("plant_sim") or {}).get("survival") or {}
     effective_survival = (effective.get("plant_sim") or {}).get("survival") or {}
-    if (effective_survival.get("bands") or {}) != (pristine_survival.get("bands") or {}):
-        moved.append("plant_sim.survival.bands")
-    if effective_survival.get("enabled") != pristine_survival.get("enabled"):
-        moved.append("plant_sim.survival.enabled")
+    # Every key under ``survival``, not the two that had been broken so far.
+    # Enumerating is how this check got walked around twice: ``bands`` and
+    # ``enabled`` were watched while the dwell table beside them -- o2/water
+    # ``warning_loss`` and ``critical_loss``, co2 ``warning_divisor`` and
+    # ``critical_divisor`` -- was not. ``*_loss: 0`` requests no occupant and
+    # ``divisor: 99999`` floors ``alive // divisor`` at zero, so either does
+    # what ``enabled: false`` does. An audit (2026-08-29, EXP-021) used them to
+    # take a run from 2/4 crew to 4/4 and 46.9 to 71.3 of 90 with this flag
+    # still reading clean -- and left the cabin worse, peak CO2 8.81 to 12.06
+    # against a critical band of 8.0. Diff the subtree so the next field added
+    # under it is covered on the day it lands.
+    absent = object()  # not ``or {}``: that reads 0 and False as the same absence
+    for key in sorted(set(pristine_survival) | set(effective_survival)):
+        if effective_survival.get(key, absent) != pristine_survival.get(key, absent):
+            moved.append(f"plant_sim.survival.{key}")
     return moved
+
+
+#: Keys under the operating-point blocks that select a run rather than describe
+#: the plant, and so say nothing about how hard the run was. ``seed`` is here
+#: twice over: it is a run knob, and an audit (EXP-021) confirmed it does not
+#: reach the deterministic arm at all -- seeds 101, 202 and 999 give
+#: byte-identical telemetry.
+_OPERATING_POINT_IGNORED = {"simulation.steps", "simulation.seed"}
+
+
+def _operating_point_modified(
+    pristine: Dict[str, Any], effective: Dict[str, Any]
+) -> List[str]:
+    """Which parts of the operating point this run changed, if any.
+
+    Not the bar, and not an accusation: running a different operating point is
+    how generations happen. It is recorded because the score cannot be read
+    without it. An audit (2026-08-29, EXP-021) scored a ``--actor-mode none``
+    run at 90.000 of 90 -- 7.77 above the published rule arm -- on
+    ``simulation.initial_{co2,o2,product_water}`` and
+    ``plant_sim.crew.activity_factor``, with ``scoring_bar_modified`` empty and
+    the physics gate passing, because none of those four is part of the bar.
+    Nothing was wrong with the guard; the run was simply easy, and no field said
+    so. ``plant_sim.survival`` is excluded here because it is the bar and
+    ``scoring_bar_modified`` already carries it.
+    """
+    changed: List[str] = []
+    absent = object()
+
+    def walk(pris: Any, eff: Any, path: str) -> None:
+        if isinstance(pris, dict) and isinstance(eff, dict):
+            for key in sorted(set(pris) | set(eff)):
+                walk(pris.get(key, absent), eff.get(key, absent), f"{path}.{key}")
+            return
+        if pris != eff and path not in _OPERATING_POINT_IGNORED:
+            changed.append(path)
+
+    walk(pristine.get("simulation") or {}, effective.get("simulation") or {}, "simulation")
+    pristine_plant = dict(pristine.get("plant_sim") or {})
+    effective_plant = dict(effective.get("plant_sim") or {})
+    pristine_plant.pop("survival", None)
+    effective_plant.pop("survival", None)
+    walk(pristine_plant, effective_plant, "plant_sim")
+    for key in ("inject_failures", "subsystem_failures"):
+        if effective.get(key, absent) != pristine.get(key, absent):
+            changed.append(key)
+    return changed
 
 
 def _apply_survival_after_ops(
@@ -468,7 +526,9 @@ class SsosEclssLoopScenario(Scenario):
         # latter is reachable by a proposal. Identical values by default, so a
         # config that names no bands behaves exactly as it did.
         survival_bands = resolve_survival_bands(config.get("plant_sim"), thresholds)
-        scoring_bar_modified = _scoring_bar_modified(self.load_config(None), config)
+        pristine_config = self.load_config(None)
+        scoring_bar_modified = _scoring_bar_modified(pristine_config, config)
+        operating_point_modified = _operating_point_modified(pristine_config, config)
         dwell_streaks = SurvivalStreaks()
 
         try:
@@ -589,6 +649,9 @@ class SsosEclssLoopScenario(Scenario):
             "operational_command_count": operational_command_count,
             "thresholds": build_effective_thresholds(thresholds),
             "scoring_bar_modified": scoring_bar_modified,
+            # Not the bar -- how hard the run was. A clean bar says the score was
+            # not gamed; it does not say the scenario was the published one.
+            "operating_point_modified": operating_point_modified,
             # What attrition actually read. Equal to thresholds unless the
             # config names bands, and worth carrying either way: a run that
             # reports occupant losses should say which edges took them.
