@@ -17,13 +17,14 @@ proposal does it: ``product_water_low_l`` 50.0 -> 40.0 on a run finishing at
 published standard (:func:`from_reference_limits`) or from a baseline that has
 been frozen on purpose (:func:`from_frozen_baseline`), and records which.
 
-**CO2 only, and that is a statement rather than an omission.** It is the one
-species this plant models as cabin atmosphere. ``o2_storage_kg`` is
-``available_o2_kg`` -- a supply tank OGS fills and the crew draws down -- so
-there is no cabin O2 to be exposed to, and an "O2 exposure integral" computed
-from it would be a number about a tank presented as a number about people.
-Water is an inventory, not an exposure. Both are named in :data:`NOT_SCORED`
-so a report says what it did not measure.
+**CO2 first, and O2 since R2.** ``o2_storage_kg`` was ``available_o2_kg``, a
+supply tank OGS filled and the crew drew down, so an "O2 exposure integral"
+computed from it would have been a number about a tank presented as a number
+about people. R2 (``1d59f49``, 2026-08-28) made it cabin atmosphere with
+[V2 6003] bands, and :func:`_o2_against_standard` scores it in PIO2 whenever a
+habitat is supplied. Water stays an inventory rather than an exposure, and is
+scored in crew-days at the [V2 6109] allocation. :data:`NOT_SCORED` has been
+empty since; it is kept as a mechanism, not as a description of these two.
 
 **A gate failure is not a low score.** Metrics are refused for a run whose
 physics do not close, because a trajectory that could not have happened has
@@ -365,12 +366,18 @@ def inventory_metrics(
 ) -> Dict[str, Any]:
     """Depth and duration on the two axes no standard can score here.
 
-    ``reference_limits`` records O2 and water as named gaps: plant_sim models
-    O2 as a supply inventory rather than cabin atmosphere, so there is no
-    partial pressure to take, and product water is an inventory too. That is a
-    reason not to claim compliance with [V2 6003]. It is not a reason to leave
-    the axes out of a comparison -- EXP-011 produced a run with the best cabin
-    CO2 of ten and the fewest survivors, three of whom O2 dwell took.
+    Both axes are sourced now -- O2 against [V2 6003] since R2 made it cabin
+    atmosphere, water against the [V2 6109] allocation -- and this function is
+    still the one that measures *depth below a band* for them. The bands it is
+    given are the survival bands, which for O2 sit one rung below the
+    operational alarm ([V2 6003] calls 145-127 mmHg "indefinite with
+    monitoring", so leaving the band is a breach and not a way to die). Whether
+    B's margin should be measured from the alarm rung instead is open, and
+    recorded in EXP-022 -- it is not settled by this docstring.
+
+    Keeping the axes in the comparison matters either way: EXP-011 produced a
+    run with the best cabin CO2 of ten and the fewest survivors, three of whom
+    O2 dwell took.
 
     Scored against ``bands``, which is where those deaths come from, and which
     the caller is expected to freeze from the baseline for the same reason the

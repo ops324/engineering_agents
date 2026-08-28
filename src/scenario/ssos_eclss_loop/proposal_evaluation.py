@@ -93,9 +93,10 @@ MIN_REPEATS_FOR_A_STOCHASTIC_VERDICT = 3
 #: steps above, same integral, same streak, same terminal margin.
 #: ``o2_steps_below`` joins these because CO2 alone can rank a run backwards:
 #: EXP-011's best cabin CO2 of ten runs was also its worst survival, three
-#: occupants taken by O2 dwell while the air stayed clean. O2 and water carry no
-#: standard here -- reference_limits records both as named gaps -- so they are
-#: scored against the frozen survival bands, which is where the deaths come from.
+#: occupants taken by O2 dwell while the air stayed clean. Both carry a sourced
+#: limit since 2026-08-28 -- [V2 6003] for O2, [V2 6109] for water -- but the
+#: comparison here stays on the frozen survival bands, which is where the deaths
+#: come from and what a proposal must not be allowed to move.
 LOWER_IS_BETTER = (
     "steps_above", "exposure_integral_kg_steps", "longest_streak", "peak_kg",
     "o2_steps_below",

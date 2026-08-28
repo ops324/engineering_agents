@@ -108,7 +108,7 @@ plant_sim:
       # floor (127) the table reads "Indefinite with monitoring". Leaving the
       # band is a standards breach; it is not a way to die. Attrition therefore
       # starts at the mild hypoxia floor, and the absolute floor 122 mmHg
-      # (88.31 kg) is the critical edge.
+      # (87.71 kg) is the critical edge.
       #
       # Neither can be reached in a 50-step run: from the normoxia floor it
       # takes 93 hours of crew metabolism to fall to 127 mmHg, and the window

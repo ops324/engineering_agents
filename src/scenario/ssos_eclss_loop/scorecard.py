@@ -225,9 +225,17 @@ def _score_a(axis: Dict[str, Any], yardstick_bands: Dict[str, float]) -> Dict[st
 
     CO2 is anchored on the ladder's own next rung: zero points when the average
     overshoot above the nominal limit equals the gap up to the ISS off-nominal
-    level. O2 and water have no published limit here -- reference_limits records
-    both as named gaps -- so their anchor is the plant's own band and empty:
-    zero points when the inventory sat at nothing for the whole run.
+    level.
+
+    O2 and water are anchored on the plant's own band and empty -- zero points
+    when the inventory sat at nothing for the whole run. That anchor was written
+    when O2 was an 8 kg supply tank, where empty was reachable. Since R2 it is
+    cabin atmosphere: 0 kg means no atmosphere at all, and the crew died about
+    13 kg earlier, so the denominator is roughly a thousand times the deficit
+    any real run accumulates (no-op integrates 23.58 against a 5212 anchor).
+    Left alone deliberately -- EXP-022 measured the repair at under half a point
+    and this branch has three retractions from repairing axes that do not move.
+    Revisit when R4 gives O2 something to do.
     """
     dwell = axis["dwell"]
     steps = dwell["steps"] or 1
@@ -503,6 +511,24 @@ def _command_outcomes(events: Sequence[Dict[str, Any]]) -> Dict[str, int]:
     return {"applied": applied, "rejected": rejected}
 
 
+def _bands_from_config(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """The bands the run's own effective config resolves to, or None if absent.
+
+    ``scenario_config.yaml`` is the effective config written beside the run.
+    Reading it costs nothing here -- this module already opens the same file for
+    C's rated capacities (:func:`_rated_capacities`) and trajectory_metrics
+    opens it for the crew size.
+    """
+    path = Path(run_dir) / "scenario_config.yaml"
+    if not path.is_file():
+        return None
+    try:
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    return resolve_survival_bands(config.get("plant_sim"), config.get("thresholds") or {})
+
+
 def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, Any]:
     """Scorecard outputs for one run. Points only where a formula exists."""
     run_dir = Path(run_dir)
@@ -513,6 +539,29 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
     bands = summary.get("survival_bands") or resolve_survival_bands(
         None, summary.get("thresholds") or {}
     )
+    # The bands decide attrition, which is the 50-point axis, and A's o2/water
+    # anchors. Taking them from summary.json alone makes one hand-editable file
+    # the whole of the bar: an audit (2026-08-29, EXP-022) rewrote that field on
+    # a copy and the scorecard believed it. The effective config is written
+    # beside it by the same run, so disagreement means one of the two is not a
+    # record of what ran -- and there is no way to tell which. Refuse rather
+    # than pick. A run that carries no config to check against keeps the old
+    # behaviour and says so in ``bands_verified``.
+    from_config = _bands_from_config(run_dir)
+    bands_verified: Optional[bool] = None
+    if from_config is not None and summary.get("survival_bands") is not None:
+        overlap = {key: from_config.get(key) for key in bands}
+        bands_verified = all(
+            other is not None and float(value) == float(other)
+            for key, value in bands.items()
+            for other in (overlap.get(key),)
+        )
+        if not bands_verified:
+            raise NotScorable(
+                f"{run_dir.name}: summary.json survival_bands {bands} disagree with "
+                f"scenario_config.yaml {overlap}. One of them is not what ran, and "
+                "the bands decide attrition -- refusing rather than choosing."
+            )
     yardstick: Yardstick = (
         from_reference_limits(habitat)
         if habitat is not None
@@ -576,10 +625,12 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
             "max": 20,
             "points": None,
             "points_policy": POINTS_POLICY,
-            # CO2 is anchored on a published ladder. O2 and water have no
-            # sourced limit -- reference_limits records both as named gaps and
-            # plant_sim models O2 as supply, not cabin atmosphere -- so their
-            # anchor is this project's own band. One axis, two kinds of ruler.
+            # CO2 is anchored on a published ladder, and since 2026-08-28 O2
+            # and water have sourced limits too ([V2 6003], [V2 6109]). These
+            # two are still anchored on the survival bands, which for O2 is one
+            # rung below the operational alarm -- so CO2's margin is measured to
+            # the alarm and O2's to the lethal floor. One axis, two kinds of
+            # ruler; open, and recorded in EXP-022.
             "co2_exposure_band": exposure_band_name,
             "o2_band_low": bands.get("o2_storage_low_kg"),
             "water_band_low": bands.get("product_water_low_l"),
@@ -700,6 +751,10 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
         },
         # "物理ゲート不合格のランは採点せず、検証無効とする"
         "scorable": passed,
+        # True  = summary.json's bands agree with the effective config beside it
+        # None  = the run carries nothing to check against (pre-2026-08 generations)
+        # False never reaches here: a disagreement raises NotScorable above.
+        "bands_verified": bands_verified,
         "axes": axes,
         "total": {
             "points": (

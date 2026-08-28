@@ -123,7 +123,7 @@ CO2_BANDS = (CO2_NOMINAL, CO2_OFF_NOMINAL, CO2_EMERGENCY)
 
 
 # --------------------------------------------------------------------------- #
-# O2 and water -- named gaps, deliberately not filled
+# O2 -- a named gap until 2026-08-28, sourced from OCHMO-TB-003 since R2
 # --------------------------------------------------------------------------- #
 #: [V2 6003] is written in PIO2, inspired oxygen partial pressure, which
 #: subtracts the lung's water vapour before taking the O2 fraction. [V2 6004]
@@ -300,10 +300,12 @@ class Habitat:
     guess was off. Callers that have no volume get no mmHg, which is the honest
     answer, rather than a plausible one.
 
-    For reference, the thresholds already in ``scenario.yaml`` are
-    self-consistent with roughly 61 m3 -- a single pressurised module, not a
-    station. That is a hint about what the scenario has been implicitly
-    modelling, not a value to adopt without checking.
+    The CO2 thresholds in ``scenario.yaml`` are operator alarm levels rather
+    than conversions of a band, so they back-solve to no single volume: 2.0 kg
+    reads as the [V2 6004] nominal 3.0 mmHg at 278.8 m3 and as the off-nominal
+    15 mmHg at 55.8 m3. An earlier version of this note said "roughly 61 m3",
+    which was the second reading, and :data:`SCENARIO_HABITAT` below rejects it
+    explicitly. The O2 thresholds *are* conversions, written at 388 m3.
     """
 
     volume_m3: float

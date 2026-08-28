@@ -442,3 +442,48 @@ def test_the_standard_yardstick_says_when_the_run_moved_its_own_bar(tmp_path):
     assert scored.exit_code == 0, scored.output
     assert "採点の基準を変更" in scored.stdout
     assert "thresholds" in scored.stdout
+
+
+def test_a_forged_summary_no_longer_sets_the_bands(tmp_path):
+    """The bands decide attrition -- the 50-point axis -- and score_run took them
+    from summary.json alone.
+
+    An audit (2026-08-29, EXP-022) copied a run, rewrote that one field, and the
+    scorecard believed it. The effective config is written beside the summary by
+    the same run, and this module already opens it for C's rated capacities, so
+    the check costs nothing. Disagreement means one of the two is not a record of
+    what ran, and nothing here can tell which: refuse rather than choose.
+    """
+    run = _run_with(tmp_path, "forged", {})
+    card = json.loads(
+        runner.invoke(app, ["scorecard", str(run), "--json"]).stdout
+    )
+    assert card["bands_verified"] is True
+
+    summary_path = run / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["survival_bands"]["o2_storage_low_kg"] = 1.0
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    refused = runner.invoke(app, ["scorecard", str(run)])
+    assert refused.exit_code == NOT_SCORABLE_EXIT
+    assert "disagree with" in (refused.output or refused.stderr or "")
+
+
+def test_a_run_from_before_the_guard_says_so_on_both_yardsticks(tmp_path):
+    """A run that predates scoring_bar_modified cannot say whether it moved its
+    own bar, and plant_sim.survival decides attrition under either yardstick.
+
+    The caveat was printed under ``run`` only, which left the default the one
+    place an unverifiable run looked verified (EXP-022).
+    """
+    run = _run_with(tmp_path, "old_generation", {})
+    summary_path = run / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    del summary["scoring_bar_modified"]
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    for flag in ("run", "standard"):
+        scored = runner.invoke(app, ["scorecard", str(run), "--yardstick", flag])
+        assert scored.exit_code == 0, scored.output
+        assert "predates scoring_bar_modified" in scored.stdout

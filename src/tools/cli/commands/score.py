@@ -461,12 +461,18 @@ def scorecard(
     except (NotScorable, TelemetryUnreadable) as exc:
         print_error(str(exc))
         raise typer.Exit(NOT_SCORABLE_EXIT) from exc
-    if yardstick == "run":
-        card["yardstick"] = "run's own thresholds"
-        if moved is None:
-            card["yardstick"] += " (predates scoring_bar_modified -- unverified)"
-    else:
-        card["yardstick"] = f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
+    card["yardstick"] = (
+        "run's own thresholds"
+        if yardstick == "run"
+        else f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
+    )
+    # On both yardsticks, not only ``run``. A run from before the guard landed
+    # cannot say whether it moved its own bar, and ``plant_sim.survival`` decides
+    # attrition under either yardstick -- so the caveat belongs on both. It was
+    # printed on ``run`` alone, which left the default (``standard``) the one
+    # place where an unverifiable run looked like a verified one (EXP-022).
+    if moved is None:
+        card["yardstick"] += " (predates scoring_bar_modified -- unverified)"
     # Both belong on the scoring artifact, not only in summary.json. An audit
     # (EXP-021) found scorecard.json carried neither, so a card could be read --
     # or pasted into a comparison -- with no way to ask whether the run had
@@ -496,6 +502,8 @@ def scorecard(
     # to 52.77 of 90: the alarm simply never rang, so no step counted as
     # critical. It was refused under ``run`` and silent here, which is the
     # weaker guard sitting on the default yardstick.
+    if card.get("bands_verified") is None:
+        typer.echo("    — 帯を照合する scenario_config.yaml が無く、summary.json の自己申告のまま")
     bar_moved = card.get("scoring_bar_modified")
     if bar_moved:
         typer.echo(f"  ⚠ 採点の基準を変更: {', '.join(bar_moved)}")
