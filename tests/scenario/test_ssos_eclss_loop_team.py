@@ -761,3 +761,33 @@ def test_llm_step_default_single_action_rep(monkeypatch):
     assert len(outcome.commands) == 1
     assert outcome.commands[0].issued_by == "op_1"
 
+
+
+def test_acting_early_does_not_touch_the_verification_band():
+    """Earning CO2 margin has to mean acting earlier, not redefining "late".
+
+    co2_storage_high_kg is the band a run is scored against, so moving it is
+    recorded as the run drawing its own line (scoring_bar_modified) and the
+    run's own thresholds stop being a usable yardstick. The pre-emptive trigger
+    is therefore a policy key of its own, and defaults to firing on the band.
+    """
+    from scenario.ssos_eclss_loop.policy import THRESHOLD_POLICY_KEYS
+
+    assert "co2_action_margin_kg" not in THRESHOLD_POLICY_KEYS
+
+    def commands_at(co2, margin=None):
+        config = _team_config()
+        if margin is not None:
+            config["policy"]["co2_action_margin_kg"] = margin
+        team = SsosEclssLoopTeam(config)
+        backend = LoopMockEclssBackend({"simulation": {}, "mock_dynamics": {}})
+        snap = backend.poll_telemetry()
+        snap = EclssTelemetrySnapshot(**{**snap.__dict__, "co2_storage_kg": co2})
+        obs = EclssLoopObservation(step=1, telemetry=snap, health={"overall": "safe"})
+        return [c.kind for c in team.run_step(backend, obs).commands]
+
+    # Band is 1.5 in _team_config. Below it, the default arm holds.
+    assert "air_revitalisation" not in commands_at(1.2)
+    assert "air_revitalisation" in commands_at(1.5)
+    # With a 0.5 kg margin the same reading fires, band untouched.
+    assert "air_revitalisation" in commands_at(1.2, margin=0.5)

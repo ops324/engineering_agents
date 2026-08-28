@@ -319,7 +319,15 @@ class SsosEclssLoopTeam(Team):
         # steps of crew CO2; under the rated-capacity invariant it removes 1.082
         # steps' worth, so one shot no longer recovers anything and the cabin
         # climbed away from the alarm line instead of returning to it.
-        need_ars = co2 is not None and (co2 >= co2_high or self.state.ars_invoked)
+        # Fire before the band, not on it. The trigger is a policy key of its
+        # own so that acting earlier never touches co2_storage_high_kg -- that
+        # key is the verification band, and moving it is scored as the run
+        # drawing its own line (scoring_bar_modified). Earning the CO2 margin
+        # has to mean acting earlier, not redefining "late".
+        # 0.0 is the historical behaviour: fire on the band.
+        action_margin = float(self.policy.get("co2_action_margin_kg", 0.0))
+        ars_trigger = co2_high - action_margin
+        need_ars = co2 is not None and (co2 >= ars_trigger or self.state.ars_invoked)
         if need_ars:
             ars_payload = dict(self.policy.get("ars_goal", {}))
             if in_critical:
