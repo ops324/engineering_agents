@@ -274,9 +274,20 @@ def score(
             # taken in the same volume. Absent when scoring off a frozen
             # baseline, and then O2 stays a house measure rather than
             # borrowing a volume nobody chose.
+            # The habitat the yardstick was actually built with, so PIO2 and
+            # ppCO2 are taken in the same volume. It used to be the flag or
+            # nothing, which made the default invocation score CO2 at 388 m3
+            # and print "not scored against a standard: o2 -- no habitat
+            # chosen" on the same page: one command, two answers about the same
+            # cabin. Absent only when scoring off a frozen baseline, where
+            # there genuinely is no volume, and O2 then stays a house measure
+            # rather than borrowing one nobody chose.
             scored_habitat = (
-                _habitat_for(habitat_volume_m3)
-                if habitat_volume_m3 is not None
+                (metrics["yardstick"].get("detail") or {}).get("habitat") or {}
+            ).get("volume_m3")
+            scored_habitat = (
+                Habitat(volume_m3=float(scored_habitat))
+                if scored_habitat
                 else None
             )
             inventory = inventory_metrics(run_dir, bands, scored_habitat)

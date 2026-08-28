@@ -528,3 +528,21 @@ def test_the_scorer_may_still_sweep_volume_but_the_card_says_so(tmp_path):
     )
     assert swept["habitat_overridden"] is True
     assert "run declares 388 m3 -- overridden" in swept["yardstick"]
+
+
+def test_score_takes_o2_in_the_same_cabin_it_takes_co2(tmp_path, run_dir):
+    """One command, one cabin.
+
+    The default invocation built its CO2 yardstick at SCENARIO_HABITAT and then
+    passed None for O2, so the same page reported ppCO2 at 388 m3 and "not
+    scored against a standard: o2 -- no habitat chosen". A frozen baseline has
+    no volume and is the one case where that line is true.
+    """
+    scored = runner.invoke(app, ["score", str(run_dir)])
+    assert scored.exit_code == 0
+    assert "not scored against a standard: o2" not in scored.output
+    assert "PIO2" in scored.output
+
+    frozen = runner.invoke(app, ["score", str(run_dir), "--baseline", str(run_dir)])
+    assert frozen.exit_code == 0
+    assert "not scored against a standard: o2" in frozen.output
