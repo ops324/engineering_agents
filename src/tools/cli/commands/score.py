@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 
@@ -49,6 +49,28 @@ def _resolve_run(run: str, root: Path) -> Path:
     return candidate if candidate.is_dir() else root / run
 
 
+def _bar_moved_by(run_dir: Path) -> Optional[List[str]]:
+    """What moved the bar this run would be scored against. [] = nothing.
+
+    None means the run predates the record and cannot say.
+
+    Two earlier versions of this check were too narrow, each in the same way --
+    picking one route to the bar and assuming it was the only one.
+    ``apply_proposals_path`` missed ``--set thresholds.*``; watching
+    ``thresholds`` alone missed ``plant_sim.survival.bands.*``, which an audit
+    used to take a run from 0/4 crew to 4/4 and 29.4 to 78.1 of 90 with the flag
+    still reading clean. The run now records every part it moved, decided
+    against scenario.yaml before its first step.
+    """
+    try:
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ["summary.json is unreadable"]
+    moved = summary.get("scoring_bar_modified")
+    if moved is not None:
+        return [str(m) for m in moved]
+    return None if summary.get("apply_proposals_path") is None else ["applied proposals"]
+
 def _build_yardstick(
     *, baseline: Optional[str], habitat_volume_m3: Optional[float], root: Path
 ) -> Yardstick:
@@ -79,6 +101,16 @@ def _build_yardstick(
     summary_path = baseline_dir / "summary.json"
     if not summary_path.is_file():
         raise typer.BadParameter(f"no summary.json under {baseline_dir}")
+    # A frozen baseline is only sound while the baseline itself did not draw the
+    # line. Pointing --baseline at a run that moved its own bar launders that
+    # bar into every run scored against it -- including, when the baseline is
+    # the run under test, the case this function's docstring forbids.
+    moved = _bar_moved_by(baseline_dir)
+    if moved:
+        raise typer.BadParameter(
+            f"baseline {baseline_dir.name} moved its own bar ({', '.join(moved)}); "
+            "freezing it would score every run against a line that run drew"
+        )
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     return from_frozen_baseline(summary.get("thresholds") or {}, baseline_run_id=baseline_dir.name)
 
@@ -323,27 +355,6 @@ def evaluate(
     raise typer.Exit(exit_codes.SUCCESS)
 
 
-def _own_thresholds_are_untouched(run_dir: Path) -> Optional[bool]:
-    """Did anything move the bar this run would be scored against?
-
-    True = nothing did, False = something did, None = the run is too old to say.
-
-    ``--apply-proposals`` writes the four ``thresholds.*`` keys that health
-    scoring reads, so such a run's own bar may be a bar its own proposal moved --
-    the hole EXP-010 closed. But ``--set thresholds.co2_storage_high_kg=99`` does
-    the same thing and leaves no ``apply_proposals_path`` behind, so that signal
-    alone is not enough. Runs written after this landed record
-    ``thresholds_modified``, decided against scenario.yaml at run time; older
-    runs get the weaker check and are told it is weaker.
-    """
-    try:
-        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    modified = summary.get("thresholds_modified")
-    if modified is not None:
-        return not bool(modified)
-    return None if summary.get("apply_proposals_path") is None else False
 
 
 def scorecard(
@@ -386,14 +397,14 @@ def scorecard(
         )
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    untouched: Optional[bool] = None
+    moved: Optional[List[str]] = None
     if yardstick == "run":
-        untouched = _own_thresholds_are_untouched(run_dir)
-        if untouched is False:
+        moved = _bar_moved_by(run_dir)
+        if moved:
             print_error(
-                "this run's thresholds were moved after scenario.yaml, so its own "
-                "thresholds may be a bar it set for itself (EXP-010). "
-                "Score it with --yardstick standard."
+                f"this run moved its own bar ({', '.join(moved)}), so scoring it "
+                "against that bar grades it against a line it drew for itself "
+                "(EXP-010). Score it with --yardstick standard."
             )
             raise typer.Exit(exit_codes.USER_ERROR)
     habitat = (
@@ -408,8 +419,8 @@ def scorecard(
         raise typer.Exit(NOT_SCORABLE_EXIT) from exc
     if yardstick == "run":
         card["yardstick"] = "run's own thresholds"
-        if untouched is None:
-            card["yardstick"] += " (predates thresholds_modified -- unverified)"
+        if moved is None:
+            card["yardstick"] += " (predates scoring_bar_modified -- unverified)"
     else:
         card["yardstick"] = f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
     if write:

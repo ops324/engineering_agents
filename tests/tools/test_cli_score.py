@@ -202,31 +202,56 @@ def test_the_two_yardsticks_give_different_totals(tmp_path, run_dir):
 
 def test_a_clean_run_records_that_nothing_moved_its_bar(tmp_path, run_dir):
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-    assert summary["thresholds_modified"] is False
+    assert summary["scoring_bar_modified"] == []
     result = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
     assert result.exit_code == 0
     assert "unverified" not in result.stdout
 
 
-def test_the_run_s_own_yardstick_is_refused_once_anything_moved_it(tmp_path):
-    """The hole EXP-010 closed, reopened by a flag, would be worse than no flag.
-
-    --set writes the same four thresholds.* keys --apply-proposals does, and
-    leaves no apply_proposals_path behind, so the check has to be on the
-    thresholds themselves. The standard yardstick stays available.
-    """
+def _run_with(tmp_path, run_id, extra):
     overrides = dict(OVERRIDES)
-    overrides["thresholds"] = {"co2_storage_high_kg": 99.0}
+    overrides.update(extra)
     result = execute_run(
-        RunSpec(scenario="ssos_eclss_loop", overrides=overrides, run_id="moved",
+        RunSpec(scenario="ssos_eclss_loop", overrides=overrides, run_id=run_id,
                 results_root=tmp_path, seed=101)
     )
     assert result.exit_code == 0, result.error
-    moved = Path(result.run_dir)
-    assert json.loads((moved / "summary.json").read_text(encoding="utf-8"))["thresholds_modified"]
+    return Path(result.run_dir)
+
+
+@pytest.mark.parametrize(
+    "run_id, extra, expected",
+    [
+        ("moved_thresholds", {"thresholds": {"co2_storage_high_kg": 99.0}}, "thresholds"),
+        (
+            "moved_bands",
+            {"plant_sim": {"survival": {"bands": {"product_water_low_l": 0.001}}}},
+            "plant_sim.survival.bands",
+        ),
+        (
+            "attrition_off",
+            {"plant_sim": {"survival": {"enabled": False}}},
+            "plant_sim.survival.enabled",
+        ),
+    ],
+)
+def test_every_route_to_the_bar_is_refused_not_just_thresholds(
+    tmp_path, run_id, extra, expected
+):
+    """Two earlier versions of this guard were narrow in the same way: each
+    picked one route to the bar and assumed it was the only one. thresholds is
+    not the bar -- an audit took a run from 0/4 crew to 4/4, 29.4 to 78.1 of 90,
+    through plant_sim.survival.bands with thresholds untouched, and
+    survival.enabled: false does it by switching attrition off outright. The
+    standard yardstick stays available for all of them.
+    """
+    moved = _run_with(tmp_path, run_id, extra)
+    recorded = json.loads((moved / "summary.json").read_text(encoding="utf-8"))
+    assert recorded["scoring_bar_modified"] == [expected]
 
     refused = runner.invoke(app, ["scorecard", str(moved), "--yardstick", "run"])
     assert refused.exit_code == 2
+    assert expected in (refused.output or refused.stderr or '')
     assert runner.invoke(app, ["scorecard", str(moved)]).exit_code == 0
 
 
@@ -236,12 +261,24 @@ def test_a_run_predating_the_record_is_scored_but_marked_unverified(tmp_path, ru
     implying a check that did not happen."""
     summary_path = run_dir / "summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    del summary["thresholds_modified"]
+    del summary["scoring_bar_modified"]
     summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
     result = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
     assert result.exit_code == 0
     assert "unverified" in result.stdout
+
+
+def test_a_baseline_that_moved_its_own_bar_cannot_be_frozen(tmp_path, run_dir):
+    """--baseline freezes a run's thresholds for everything scored against it.
+    A baseline that drew its own line launders that line into every such run --
+    and when the baseline is the run under test, that is exactly what
+    _build_yardstick's docstring forbids. A clean run stays usable, which is why
+    the check is on the bar and not on whether the paths match."""
+    dirty = _run_with(tmp_path, "dirty_base", {"thresholds": {"co2_storage_high_kg": 99.0}})
+    assert runner.invoke(app, ["score", str(run_dir), "--baseline", str(dirty)]).exit_code != 0
+    assert runner.invoke(app, ["score", str(dirty), "--baseline", str(dirty)]).exit_code != 0
+    assert runner.invoke(app, ["score", str(run_dir), "--baseline", str(run_dir)]).exit_code == 0
 
 
 def test_the_run_s_own_yardstick_takes_no_habitat(tmp_path, run_dir):

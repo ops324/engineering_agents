@@ -10,7 +10,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -250,6 +250,34 @@ _COMMAND_OUTCOMES = {
 }
 
 
+def _scoring_bar_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -> List[str]:
+    """Which parts of the bar this run is scored against were moved, if any.
+
+    Decided here, before the first step, because only the run can tell:
+    scenario.yaml keeps changing between generations (v4's o2 threshold was
+    6.0 kg, v5's is 104.25), so diffing an old run against today's defaults
+    would condemn whole generations instead of the runs that moved their own bar.
+
+    ``thresholds`` alone is not the bar. An independent audit (2026-08-28) took
+    a run from 29.4 to 78.1 of 90 -- 0/4 crew to 4/4 -- without touching a single
+    ``thresholds`` key, by moving ``plant_sim.survival.bands.*``; those decide
+    attrition, which is the 50-point axis, and A's o2/water deficits.
+    ``plant_sim.survival.enabled: false`` does the same by switching attrition
+    off outright. Scoring such a run against its own bar is the hole EXP-010
+    closed, reopened one field over.
+    """
+    moved: List[str] = []
+    if (effective.get("thresholds") or {}) != (pristine.get("thresholds") or {}):
+        moved.append("thresholds")
+    pristine_survival = (pristine.get("plant_sim") or {}).get("survival") or {}
+    effective_survival = (effective.get("plant_sim") or {}).get("survival") or {}
+    if (effective_survival.get("bands") or {}) != (pristine_survival.get("bands") or {}):
+        moved.append("plant_sim.survival.bands")
+    if effective_survival.get("enabled") != pristine_survival.get("enabled"):
+        moved.append("plant_sim.survival.enabled")
+    return moved
+
+
 def _apply_survival_after_ops(
     *,
     backend: EclssBackend,
@@ -367,13 +395,6 @@ class SsosEclssLoopScenario(Scenario):
             config = apply_design_proposals(config, proposals)
             applied_proposals_path = Path(apply_proposals_path)
         thresholds = config.get("thresholds", {}) or {}
-        # Whether anything moved the bar this run will be scored against, by any
-        # route: --set thresholds.*, --override-file, or --apply-proposals. Only
-        # the run itself can tell -- scenario.yaml keeps changing, so comparing
-        # an old run against today's defaults would flag whole generations. The
-        # run's own thresholds are only a trustworthy yardstick when this is
-        # false (EXP-010, EXP-016).
-        thresholds_modified = thresholds != (self.load_config(None).get("thresholds", {}) or {})
         agents_config = load_agents_config(self.name, config)
         if agents_config:
             agents_config = merge_labeled_policy_from_thresholds(agents_config, thresholds)
@@ -447,6 +468,7 @@ class SsosEclssLoopScenario(Scenario):
         # latter is reachable by a proposal. Identical values by default, so a
         # config that names no bands behaves exactly as it did.
         survival_bands = resolve_survival_bands(config.get("plant_sim"), thresholds)
+        scoring_bar_modified = _scoring_bar_modified(self.load_config(None), config)
         dwell_streaks = SurvivalStreaks()
 
         try:
@@ -566,7 +588,7 @@ class SsosEclssLoopScenario(Scenario):
             "message_count": message_count,
             "operational_command_count": operational_command_count,
             "thresholds": build_effective_thresholds(thresholds),
-            "thresholds_modified": thresholds_modified,
+            "scoring_bar_modified": scoring_bar_modified,
             # What attrition actually read. Equal to thresholds unless the
             # config names bands, and worth carrying either way: a run that
             # reports occupant losses should say which edges took them.
