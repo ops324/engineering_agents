@@ -49,7 +49,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-013](EXP-013-llm-vs-rule.md) | AI腕 vs ルール腕 | **confirmed**（ルール腕が有意に優位） |
 | [EXP-014](EXP-014-llm-vs-rule-v4.md) | AI腕 vs ルール腕（v4・定格の不変条件） | **confirmed**（同じ結論） |
 | [EXP-015](EXP-015-llm-vs-rule-v5.md) | AI腕 vs ルール腕（v5・O₂ がキャビン大気） | **confirmed**（3世代目・同じ結論） |
-| [EXP-016](EXP-016-scoring-resolution.md) | 判断の分解能はどの軸にあるか（再採点のみ） | **confirmed**（C・D にしか無い） |
+| [EXP-016](EXP-016-scoring-resolution.md) | 判断の分解能はどの軸にあるか（再採点のみ） | **retracted**（独立監査で撤回。行き先は B 軸の CO₂） |
 
 ## データの所在
 
