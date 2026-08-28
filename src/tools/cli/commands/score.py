@@ -369,7 +369,15 @@ def evaluate(
     """
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    yardstick = from_reference_limits(_habitat_for(habitat_volume_m3))
+    # Same rule as `scorecard`: the baseline's own declared cabin is the default
+    # once it has one, and the flag overrides it explicitly. Without this,
+    # `evaluate` was the one command that still scored every run at
+    # SCENARIO_HABITAT no matter what cabin the run was built for.
+    yardstick = from_reference_limits(
+        _habitat_for(habitat_volume_m3)
+        if habitat_volume_m3 is not None
+        else (_habitat_declared_by(run_dir) or SCENARIO_HABITAT)
+    )
     # Checked before either arm runs: an unknown band otherwise raises KeyError
     # after both simulations have already been paid for.
     known = {b.name for b in yardstick.bands}
