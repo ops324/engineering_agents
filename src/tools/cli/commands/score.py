@@ -170,11 +170,43 @@ def score(
     bands = _survival_bands(run_dir)
     if bands:
         try:
-            inventory = inventory_metrics(run_dir, bands)
+            # The habitat the yardstick was built with, so PIO2 and ppCO2 are
+            # taken in the same volume. Absent when scoring off a frozen
+            # baseline, and then O2 stays a house measure rather than
+            # borrowing a volume nobody chose.
+            scored_habitat = (
+                Habitat(volume_m3=float(habitat_volume_m3))
+                if habitat_volume_m3 is not None
+                else None
+            )
+            inventory = inventory_metrics(run_dir, bands, scored_habitat)
         except (NotScorable, TelemetryUnreadable, KeyError):
             inventory = None
         if inventory is not None:
             o2, water = inventory["o2"], inventory["water"]
+            pio2 = o2.get("pio2")
+            if pio2 is None and o2.get("pio2_reason"):
+                # Saying nothing here is how an axis disappears. The frozen
+                # baseline path has no habitat, so PIO2 cannot be taken.
+                typer.echo(
+                    f"  not scored against a standard: o2 — {o2['pio2_reason']}"
+                )
+            if pio2:
+                typer.echo(
+                    f"  cabin O2 against [V2 6003], as PIO2 "
+                    f"(total pressure assumed {pio2['assumed_total_pressure_mmhg']:.0f} mmHg)\n"
+                    f"    min {pio2['min_mmhg']:.4g} mmHg   terminal {pio2['terminal_mmhg']:.4g} mmHg"
+                )
+                for label, band in pio2["bands"].items():
+                    typer.echo(
+                        f"    {label:<34} floor {band['floor_pio2_mmhg']:g} mmHg = "
+                        f"{band['floor_kg']:.4g} kg\n"
+                        f"      steps below {band['steps_below']:<4} longest "
+                        f"{band['longest_streak_below']:<4} deficit "
+                        f"{band['deficit_integral']:.4g} kg*steps"
+                        f"  terminal margin {band['terminal_margin_kg']:+.4g} kg\n"
+                        f"      from {band['origin']}"
+                    )
             typer.echo(
                 "  against the run's own survival bands (house measure, not a standard):\n"
                 f"    o2    low {o2['band_low_kg']:.4g} kg   min {o2['min_kg']:.4g} kg"

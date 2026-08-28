@@ -14,7 +14,7 @@ APPROX = dict(rel=1e-9, abs=1e-9)
 _INVENTORY_FIELDS = (
     "cabin_co2_kg",
     "captured_co2_kg",
-    "available_o2_kg",
+    "cabin_o2_kg",
     "product_water_l",
     "urine_buffer_l",
     "grey_water_l",
@@ -85,12 +85,12 @@ def test_run_is_deterministic():
 
 def test_nominal_no_shortfall_over_24h():
     # 72 steps * 1200 s = 24 h, with generous starting water/o2
-    m = _run_closed_loop(72, PlantSimConfig(initial_o2_kg=2.0, initial_product_water_l=150.0))
+    m = _run_closed_loop(72, PlantSimConfig(initial_cabin_o2_kg=2.0, initial_product_water_l=150.0))
     assert m.state.total_o2_shortfall_kg == pytest.approx(0.0, abs=1e-9)
     assert m.state.total_water_shortfall_l == pytest.approx(0.0, abs=1e-9)
 
 
 def test_cabin_co2_does_not_diverge():
-    m = _run_closed_loop(72, PlantSimConfig(initial_o2_kg=2.0, initial_product_water_l=150.0))
+    m = _run_closed_loop(72, PlantSimConfig(initial_cabin_o2_kg=2.0, initial_product_water_l=150.0))
     # ARS capacity (4.5 kg/day) exceeds crew generation (4.16 kg/day) -> bounded
     assert m.state.cabin_co2_kg < 2.5

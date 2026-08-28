@@ -91,7 +91,12 @@ def test_provenance_lists_the_gaps_as_well_as_the_limits():
     assert len(payload["co2_bands"]) == 3
     assert payload["unsourced"], "a report that hides its gaps reads as complete"
     labels = {entry["label"] for entry in payload["unsourced"]}
-    assert "ppO2 range for crew exposure" in labels
+    # O2 left this set on 2026-08-28 when the plant gained cabin_o2_kg and
+    # [V2 6003] became scoreable. Total pressure [V2 6006] is the gap that
+    # remains, and it is the one R4's leak will need.
+    assert "total pressure, indefinite crew exposure" in labels
+    assert len(payload["o2_bands"]) == 2
+    assert payload["potable_water"]["sourced"] is True
 
 
 # --------------------------------------------------------------------------- #

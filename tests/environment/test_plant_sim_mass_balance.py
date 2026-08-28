@@ -113,7 +113,7 @@ def test_electrolysis_inventory_follows_stoichiometric_ratios():
     assert water_l_to_kg(before.product_water_l - s.product_water_l) == pytest.approx(
         r["processed_water_kg"], **EXACT
     )
-    assert s.available_o2_kg - before.available_o2_kg == pytest.approx(r["o2_generated_kg"], **EXACT)
+    assert s.cabin_o2_kg - before.cabin_o2_kg == pytest.approx(r["o2_generated_kg"], **EXACT)
     assert r["o2_generated_kg"] == pytest.approx(r["processed_water_kg"] / WATER_PER_O2, **EXACT)
     assert r["h2_generated_kg"] == pytest.approx(r["o2_generated_kg"] * H2_PER_O2, **EXACT)
     # No Sabatier: all H2 vents; water tank only loses electrolysis feed.
@@ -192,7 +192,7 @@ def test_wrs_preserves_water_volume_across_buffers_product_and_brine():
 
 def test_resource_services_move_mass_without_creating_it():
     m = _model(
-        initial_o2_kg=1.0,
+        initial_cabin_o2_kg=1.0,
         initial_captured_co2_kg=1.0,
         initial_product_water_l=10.0,
         initial_grey_water_l=0.0,
@@ -205,7 +205,7 @@ def test_resource_services_move_mass_without_creating_it():
     grey = m.submit_grey_water(0.75)
     s = m.state
 
-    assert before.available_o2_kg - s.available_o2_kg == pytest.approx(o2, **EXACT)
+    assert before.cabin_o2_kg - s.cabin_o2_kg == pytest.approx(o2, **EXACT)
     assert s.total_o2_delivered_kg == pytest.approx(o2, **EXACT)
     assert before.captured_co2_kg - s.captured_co2_kg == pytest.approx(co2, **EXACT)
     assert s.total_co2_delivered_kg == pytest.approx(co2, **EXACT)
@@ -219,11 +219,11 @@ def test_resource_services_move_mass_without_creating_it():
 # multi-step species conservation (exact inventory ledgers)
 # --------------------------------------------------------------------------- #
 def test_scenario_o2_conservation_with_services():
-    m = _driven_loop(72, with_services=True, initial_o2_kg=2.0, initial_product_water_l=150.0)
+    m = _driven_loop(72, with_services=True, initial_cabin_o2_kg=2.0, initial_product_water_l=150.0)
     s = m.state
     c = m.config
-    total_in = c.initial_o2_kg + s.total_o2_generated_kg
-    total_out = s.available_o2_kg + s.total_o2_consumed_kg + s.total_o2_delivered_kg
+    total_in = c.initial_cabin_o2_kg + s.total_o2_generated_kg
+    total_out = s.cabin_o2_kg + s.total_o2_consumed_kg + s.total_o2_delivered_kg
     assert total_in == pytest.approx(total_out, **EXACT)
 
 

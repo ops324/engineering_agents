@@ -30,7 +30,7 @@ def test_from_scenario_config():
 
 
 def test_poll_telemetry_maps_cabin_co2_and_is_independent():
-    b = _backend(initial_cabin_co2_kg=1.7, initial_o2_kg=0.5)
+    b = _backend(initial_cabin_co2_kg=1.7, initial_cabin_o2_kg=0.5)
     t1 = b.poll_telemetry()
     assert t1.co2_storage_kg == pytest.approx(1.7, **APPROX)
     assert t1.o2_storage_kg == pytest.approx(0.5, **APPROX)
@@ -67,7 +67,7 @@ def test_poll_telemetry_includes_dwell_losses_until_next_step():
     b = _backend(
         crew_size=4,
         survival_enabled=True,
-        initial_o2_kg=10.0,
+        initial_cabin_o2_kg=10.0,
         initial_product_water_l=100.0,
     )
     lost = b.set_crew_alive(3, limiting=["o2_warning"])
@@ -92,7 +92,7 @@ def test_apply_capacity_drop_telemetry_uses_physics_limiting_labels():
     b = _backend(
         crew_size=4,
         survival_enabled=True,
-        initial_o2_kg=0.02,
+        initial_cabin_o2_kg=0.02,
         initial_product_water_l=100.0,
         initial_cabin_co2_kg=0.1,
     )
@@ -177,14 +177,14 @@ def test_invalid_ars_goal_rejected_no_mutation(bad):
 
 @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan")])
 def test_invalid_service_request_rejected(bad):
-    b = _backend(initial_o2_kg=1.0)
+    b = _backend(initial_cabin_o2_kg=1.0)
     r = b.request_o2(bad)
     assert r.success is False
-    assert b.model.state.available_o2_kg == pytest.approx(1.0, **APPROX)
+    assert b.model.state.cabin_o2_kg == pytest.approx(1.0, **APPROX)
 
 
 def test_service_partial_grant_semantics():
-    b = _backend(initial_o2_kg=0.1)
+    b = _backend(initial_cabin_o2_kg=0.1)
     r = b.request_o2(0.5)
     assert r.success is False
     assert r.response_value == pytest.approx(0.1, **APPROX)
@@ -219,7 +219,7 @@ def test_ogs_failure_stops_ogs_and_sabatier():
     r = b.send_oxygen_generation_goal(OgsGoal(input_water_mass=0.06))
     assert r.success is False
     assert b.model.state.captured_co2_kg == pytest.approx(before.captured_co2_kg, **APPROX)
-    assert b.model.state.available_o2_kg == pytest.approx(before.available_o2_kg, **APPROX)
+    assert b.model.state.cabin_o2_kg == pytest.approx(before.cabin_o2_kg, **APPROX)
 
 
 def test_submit_grey_water_works_during_wrs_failure():

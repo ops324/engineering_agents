@@ -58,7 +58,7 @@ class PlantSimConfig:
     # --- initial inventories ---
     initial_cabin_co2_kg: float = 1.50
     initial_captured_co2_kg: float = 0.0
-    initial_o2_kg: float = 0.48
+    initial_cabin_o2_kg: float = 0.48
     initial_product_water_l: float = 100.0
     initial_urine_buffer_l: float = 0.0
     initial_grey_water_l: float = 0.0
@@ -128,7 +128,7 @@ class PlantSimConfig:
         for name in (
             "initial_cabin_co2_kg",
             "initial_captured_co2_kg",
-            "initial_o2_kg",
+            "initial_cabin_o2_kg",
             "initial_product_water_l",
             "initial_urine_buffer_l",
             "initial_grey_water_l",
@@ -220,7 +220,7 @@ class PlantSimConfig:
                 wrs, "max_feed_l_per_operation", "wrs_max_feed_l_per_operation"
             ),
             initial_cabin_co2_kg=pick(sim, "initial_co2_storage_kg", "initial_cabin_co2_kg"),
-            initial_o2_kg=pick(sim, "initial_o2_storage_kg", "initial_o2_kg"),
+            initial_cabin_o2_kg=pick(sim, "initial_o2_storage_kg", "initial_cabin_o2_kg"),
             initial_product_water_l=pick(sim, "initial_product_water_l", "initial_product_water_l"),
             survival_enabled=bool(pick(survival, "enabled", "survival_enabled")),
             cabin_co2_critical_kg=pick(

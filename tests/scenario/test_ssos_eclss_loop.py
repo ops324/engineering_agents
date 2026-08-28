@@ -112,7 +112,9 @@ def test_ssos_eclss_loop_labeled_agents_invoke_ars(tmp_path: Path):
         overrides={
             **_ssos_agents("labeled_rule_base"),
             "plant_sim": {"crew": {"size": 4}},
-            "simulation": {"initial_o2_storage_kg": 8.0},
+            # Cabin O2 comfortably inside the [V2 6003] normoxia band: these tests
+            # are about CO2 and ARS, so O2 must not be the binding resource.
+            "simulation": {"initial_o2_storage_kg": 110.0},
         },
         recreate_output=True,
     )
@@ -182,7 +184,9 @@ def test_ssos_eclss_loop_labeled_reinvokes_ars_when_co2_reexceeds(tmp_path: Path
         output_dir=tmp_path / "labeled_rearm",
         overrides={
             **_ssos_agents("labeled_rule_base"),
-            "simulation": {"initial_o2_storage_kg": 8.0},
+            # Cabin O2 comfortably inside the [V2 6003] normoxia band: these tests
+            # are about CO2 and ARS, so O2 must not be the binding resource.
+            "simulation": {"initial_o2_storage_kg": 110.0},
         },
         recreate_output=True,
     )
@@ -207,7 +211,9 @@ def test_ssos_eclss_loop_provenance_includes_operational_records(tmp_path: Path)
         output_dir=tmp_path / "labeled_prov",
         overrides={
             **_ssos_agents("labeled_rule_base"),
-            "simulation": {"initial_o2_storage_kg": 8.0},
+            # Cabin O2 comfortably inside the [V2 6003] normoxia band: these tests
+            # are about CO2 and ARS, so O2 must not be the binding resource.
+            "simulation": {"initial_o2_storage_kg": 110.0},
         },
         recreate_output=True,
     )
@@ -274,7 +280,7 @@ def test_ssos_eclss_loop_labeled_agents_ogs_when_o2_low(tmp_path: Path):
         output_dir=tmp_path / "ogs",
         overrides={
             **_ssos_agents("labeled_rule_base"),
-            "simulation": {"initial_o2_storage_kg": 0.42},
+            "simulation": {"initial_o2_storage_kg": 104.0},
         },
         recreate_output=True,
     )
@@ -679,8 +685,9 @@ def test_ssos_eclss_loop_plant_sim_writes_thresholds_and_metabolism(tmp_path: Pa
 
     assert summary["backend"] == "plant_sim"
     assert "thresholds" in summary
-    assert summary["thresholds"]["o2_storage_low_kg"] == pytest.approx(6.0)
-    assert summary["thresholds"]["o2_storage_critical_kg"] == pytest.approx(1.0)
+    # [V2 6003] bands as cabin mass, not the old 6.0/1.0 kg tank levels.
+    assert summary["thresholds"]["o2_storage_low_kg"] == pytest.approx(104.25)
+    assert summary["thresholds"]["o2_storage_critical_kg"] == pytest.approx(91.31)
 
     metabolism_rows = [
         row
@@ -787,7 +794,12 @@ def test_plant_sim_o2_warning_dwell_before_physics_floor(tmp_path: Path):
             "agents": {"mode": "none"},
             "simulation": {
                 "steps": 3,
-                "initial_o2_storage_kg": 5.0,
+                # Below the [V2 6003] mild hypoxia floor (91.31 kg) so warning
+                # dwell fires, but above the physics floor -- the point of the
+                # test is that dwell takes someone while the cabin still covers
+                # the next interval. The scenario's own start is 104.86 kg and
+                # cannot reach here in 50 steps; this is a constructed case.
+                "initial_o2_storage_kg": 90.0,
                 "initial_product_water_l": 80.0,
                 "initial_co2_storage_kg": 0.5,
             },

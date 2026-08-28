@@ -53,7 +53,7 @@ class SweepRow:
     ogs_nameplate_water_l: float
     wrs_nameplate_l: float
     initial_co2_kg: float
-    initial_o2_kg: float
+    initial_cabin_o2_kg: float
     initial_water_l: float
     final_co2_kg: float
     final_o2_kg: float
@@ -84,7 +84,7 @@ class SweepRow:
             ogs_nameplate_water_l=self.ogs_nameplate_water_l,
             wrs_nameplate_l=self.wrs_nameplate_l,
             initial_co2_kg=self.initial_co2_kg,
-            initial_o2_kg=self.initial_o2_kg,
+            initial_cabin_o2_kg=self.initial_cabin_o2_kg,
             initial_water_l=self.initial_water_l,
             final_co2_kg=self.final_co2_kg,
             final_o2_kg=self.final_o2_kg,
@@ -182,7 +182,7 @@ def run_campaign(
     ars_goal, ogs_water, wrs_urine = _policy_action_goals(policy, cfg)
 
     initial_co2 = model.state.cabin_co2_kg
-    initial_o2 = model.state.available_o2_kg
+    initial_o2 = model.state.cabin_o2_kg
     initial_water = model.state.product_water_l
     co2_metab = o2_metab = water_metab = 0.0
     co2_ops = o2_ops = water_ops = 0.0
@@ -220,7 +220,7 @@ def run_campaign(
         co2_net_kg=model.state.cabin_co2_kg - initial_co2,
         o2_metabolism_kg=o2_metab,
         o2_ops_kg=o2_ops,
-        o2_net_kg=model.state.available_o2_kg - initial_o2,
+        o2_net_kg=model.state.cabin_o2_kg - initial_o2,
         water_metabolism_l=water_metab,
         water_ops_l=water_ops,
         water_net_l=model.state.product_water_l - initial_water,
@@ -232,10 +232,10 @@ def run_campaign(
         ogs_nameplate_water_l=ogs_water_np,
         wrs_nameplate_l=wrs_nameplate_l(wrs_urine, cfg),
         initial_co2_kg=initial_co2,
-        initial_o2_kg=initial_o2,
+        initial_cabin_o2_kg=initial_o2,
         initial_water_l=initial_water,
         final_co2_kg=model.state.cabin_co2_kg,
-        final_o2_kg=model.state.available_o2_kg,
+        final_o2_kg=model.state.cabin_o2_kg,
         final_water_l=model.state.product_water_l,
     )
 
@@ -328,7 +328,7 @@ def initial_tank(row: SweepRow, resource: str) -> float:
     if resource == "co2":
         return row.initial_co2_kg
     if resource == "o2":
-        return row.initial_o2_kg
+        return row.initial_cabin_o2_kg
     if resource == "water":
         return row.initial_water_l
     raise ValueError(f"unknown resource {resource!r}")
@@ -517,7 +517,7 @@ class SliderSpec:
 
 SLIDER_SPECS: Tuple[SliderSpec, ...] = (
     SliderSpec("simulation.initial_co2_storage_kg", "initial_co2_storage_kg", "kg", "float", 0.0, 10.0, 0.05, "Initial storage"),
-    SliderSpec("simulation.initial_o2_storage_kg", "initial_o2_storage_kg", "kg", "float", 0.0, 20.0, 0.02, "Initial storage"),
+    SliderSpec("simulation.initial_o2_storage_kg", "initial_o2_storage_kg", "kg", "float", 80.0, 130.0, 0.1, "Initial storage"),
     SliderSpec("simulation.initial_product_water_l", "initial_product_water_l", "L", "float", 0.0, 200.0, 1.0, "Initial storage"),
     SliderSpec("plant_sim.time.step_seconds", "step_seconds", "s", "int", 300, 3600, 60, "Time"),
     SliderSpec("plant_sim.time.ars_operation_seconds", "ars_operation_seconds", "s", "int", 600, 7200, 60, "Time"),

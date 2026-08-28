@@ -40,7 +40,7 @@ def test_default_config_is_valid():
         {"step_seconds": 0.0},
         {"step_seconds": float("inf")},
         {"crew_size": -1},
-        {"initial_o2_kg": -0.1},
+        {"initial_cabin_o2_kg": -0.1},
         {"potable_water_kg_day_person": 3.0},  # breaks crew water balance
     ],
 )
@@ -58,7 +58,7 @@ def test_capacity_drop_o2_floor_and_no_revival():
     m = _model(
         crew_size=4,
         survival_enabled=True,
-        initial_o2_kg=0.03,
+        initial_cabin_o2_kg=0.03,
         initial_product_water_l=100.0,
         initial_cabin_co2_kg=0.1,
         cabin_co2_critical_kg=2.2,
@@ -69,7 +69,7 @@ def test_capacity_drop_o2_floor_and_no_revival():
     assert m.state.crew_alive == expected
     assert result["lost_this_step"] == 4 - expected
     assert "o2" in result["limiting"]
-    m.state.available_o2_kg = 10.0
+    m.state.cabin_o2_kg = 10.0
     m.apply_capacity_drop()
     assert m.state.crew_alive == expected
 
@@ -78,7 +78,7 @@ def test_capacity_drop_co2_critical_does_not_cut_crew():
     m = _model(
         crew_size=4,
         survival_enabled=True,
-        initial_o2_kg=10.0,
+        initial_cabin_o2_kg=10.0,
         initial_product_water_l=100.0,
         initial_cabin_co2_kg=2.2,
         cabin_co2_critical_kg=2.2,
@@ -93,12 +93,12 @@ def test_capacity_drop_attributes_lost_to_o2_when_both_bind():
     m = _model(
         crew_size=4,
         survival_enabled=True,
-        initial_o2_kg=10.0,
+        initial_cabin_o2_kg=10.0,
         initial_product_water_l=100.0,
     )
     o2_pp = m.per_person_o2_demand_kg()
     water_pp = m.per_person_water_demand_l()
-    m.state.available_o2_kg = 2 * o2_pp
+    m.state.cabin_o2_kg = 2 * o2_pp
     m.state.product_water_l = 1 * water_pp
     result = m.apply_capacity_drop()
     assert m.state.crew_alive == 1
@@ -110,8 +110,8 @@ def test_capacity_drop_attributes_lost_to_o2_when_both_bind():
 
 
 def test_metabolism_scales_with_crew_alive_when_survival_enabled():
-    full = _model(crew_size=4, survival_enabled=True, initial_o2_kg=10.0)
-    half = _model(crew_size=4, survival_enabled=True, initial_o2_kg=10.0)
+    full = _model(crew_size=4, survival_enabled=True, initial_cabin_o2_kg=10.0)
+    half = _model(crew_size=4, survival_enabled=True, initial_cabin_o2_kg=10.0)
     half.state.crew_alive = 2
     full.advance_step()
     half.advance_step()
@@ -138,7 +138,7 @@ def test_from_scenario_config_merges_and_defaults():
     )
     assert cfg.crew_size == 6
     assert cfg.ars_capture_efficiency == 0.9
-    assert cfg.initial_o2_kg == 1.0
+    assert cfg.initial_cabin_o2_kg == 1.0
     assert cfg.step_seconds == 1200.0  # default preserved
 
 
@@ -157,8 +157,8 @@ def test_advance_step_expected_rates():
     assert s.cabin_co2_kg == pytest.approx(
         before.cabin_co2_kg + per_interval(c.co2_kg_day_person, c.step_seconds) * factor, **APPROX
     )
-    assert s.available_o2_kg == pytest.approx(
-        before.available_o2_kg - per_interval(c.o2_kg_day_person, c.step_seconds) * factor, **APPROX
+    assert s.cabin_o2_kg == pytest.approx(
+        before.cabin_o2_kg - per_interval(c.o2_kg_day_person, c.step_seconds) * factor, **APPROX
     )
     assert s.simulation_time_s == pytest.approx(c.step_seconds)
 
@@ -194,9 +194,9 @@ def test_crew_does_not_produce_water_when_dehydrated():
 
 
 def test_o2_shortfall_recorded_when_depleted():
-    m = _model(initial_o2_kg=0.0)
+    m = _model(initial_cabin_o2_kg=0.0)
     m.advance_step()
-    assert m.state.available_o2_kg == pytest.approx(0.0, abs=1e-12)
+    assert m.state.cabin_o2_kg == pytest.approx(0.0, abs=1e-12)
     assert m.state.total_o2_shortfall_kg > 0.0
 
 
@@ -387,10 +387,10 @@ def test_request_co2_draws_only_captured():
 
 
 def test_request_partial_when_short():
-    m = _model(initial_o2_kg=0.1)
+    m = _model(initial_cabin_o2_kg=0.1)
     granted = m.request_o2(0.5)
     assert granted == pytest.approx(0.1, **APPROX)
-    assert m.state.available_o2_kg == pytest.approx(0.0, abs=1e-12)
+    assert m.state.cabin_o2_kg == pytest.approx(0.0, abs=1e-12)
 
 
 def test_submit_grey_water_adds_and_records_external():

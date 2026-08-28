@@ -52,7 +52,7 @@ class PlantState:
     # inventories (can decrease; guarded by invariants)
     cabin_co2_kg: float = 0.0
     captured_co2_kg: float = 0.0
-    available_o2_kg: float = 0.0
+    cabin_o2_kg: float = 0.0
     product_water_l: float = 0.0
     urine_buffer_l: float = 0.0
     grey_water_l: float = 0.0
@@ -109,7 +109,7 @@ class PlantState:
 _INVENTORY_FIELDS = (
     "cabin_co2_kg",
     "captured_co2_kg",
-    "available_o2_kg",
+    "cabin_o2_kg",
     "product_water_l",
     "urine_buffer_l",
     "grey_water_l",
@@ -125,7 +125,7 @@ class PlantModel:
         self.state = PlantState(
             cabin_co2_kg=c.initial_cabin_co2_kg,
             captured_co2_kg=c.initial_captured_co2_kg,
-            available_o2_kg=c.initial_o2_kg,
+            cabin_o2_kg=c.initial_cabin_o2_kg,
             product_water_l=c.initial_product_water_l,
             urine_buffer_l=c.initial_urine_buffer_l,
             grey_water_l=c.initial_grey_water_l,
@@ -176,7 +176,7 @@ class PlantModel:
         o2_pp = self.per_person_o2_demand_kg()
         water_pp = self.per_person_water_demand_l()
         if o2_pp > 0.0:
-            o2_cap = int(math.floor(s.available_o2_kg / o2_pp + 0.0))
+            o2_cap = int(math.floor(s.cabin_o2_kg / o2_pp + 0.0))
         else:
             o2_cap = current
         if water_pp > 0.0:
@@ -221,8 +221,8 @@ class PlantModel:
         s.total_co2_generated_kg += co2_generated
 
         # O2 consumption (bounded by inventory; deficit recorded)
-        o2_consumed = min(s.available_o2_kg, o2_demand)
-        s.available_o2_kg -= o2_consumed
+        o2_consumed = min(s.cabin_o2_kg, o2_demand)
+        s.cabin_o2_kg -= o2_consumed
         s.total_o2_consumed_kg += o2_consumed
         s.total_o2_shortfall_kg += o2_demand - o2_consumed
 
@@ -341,7 +341,7 @@ class PlantModel:
         h2_generated = o2_generated * H2_PER_O2
 
         s.product_water_l -= water_kg_to_l(processed)
-        s.available_o2_kg += o2_generated
+        s.cabin_o2_kg += o2_generated
 
         # Sabatier: H2 + captured CO2 -> CH4 + H2O
         h2_eligible = h2_generated * c.sabatier_conversion_efficiency
@@ -457,8 +457,8 @@ class PlantModel:
     # ------------------------------------------------------------------ #
     def request_o2(self, amount_kg: float) -> float:
         s = self.state
-        granted = min(s.available_o2_kg, amount_kg)
-        s.available_o2_kg -= granted
+        granted = min(s.cabin_o2_kg, amount_kg)
+        s.cabin_o2_kg -= granted
         s.total_o2_delivered_kg += granted
         self._check_invariants()
         return granted

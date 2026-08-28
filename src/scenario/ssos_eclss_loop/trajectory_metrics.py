@@ -41,22 +41,26 @@ import yaml
 
 from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
 from scenario.ssos_eclss_loop.reference_limits import (
+    ASSUMED_TOTAL_PRESSURE_MMHG,
     CO2_BANDS,
+    O2_BANDS,
     POTABLE_WATER_QUANTITY,
     Habitat,
     co2_kg_for_ppco2,
+    o2_kg_for_pio2,
+    pio2_mmhg,
+    ppo2_mmhg as _ppo2_mmhg,
     provenance as limits_provenance,
 )
 
 SCHEMA_VERSION = "0.1.0"
 
 #: Named so a report states its own coverage instead of implying完全性.
-NOT_SCORED = {
-    "o2": (
-        "plant_sim models O2 as available_o2_kg, a supply inventory, not cabin "
-        "atmosphere; there is no exposure to integrate"
-    ),
-}
+#: Empty since 2026-08-28: water gained a sourced [V2 6109] allocation, and O2
+#: became cabin atmosphere with [V2 6003] bands to be scored against. Kept as a
+#: mechanism -- a report that cannot say what it failed to measure will imply
+#: coverage it does not have.
+NOT_SCORED: Dict[str, str] = {}
 
 
 class NotScorable(RuntimeError):
@@ -289,6 +293,37 @@ def trajectory_metrics(
     }
 
 
+def _o2_against_standard(
+    o2: Sequence[float], habitat: Optional[Habitat]
+) -> Dict[str, Any]:
+    """Depth and duration below each [V2 6003] band, in PIO2.
+
+    Needs a habitat for the same reason CO2 does: mass becomes a partial
+    pressure only inside a volume. Without one the axis stays a house measure
+    rather than silently borrowing a default.
+    """
+    if habitat is None:
+        return {"pio2": None, "pio2_reason": "no habitat chosen; kg cannot become PIO2"}
+    bands: Dict[str, Any] = {}
+    for limit in O2_BANDS:
+        floor_kg = o2_kg_for_pio2(float(limit.value), habitat)
+        bands[limit.label] = {
+            "floor_pio2_mmhg": limit.value,
+            "floor_kg": round(floor_kg, 6),
+            "terminal_margin_kg": round(o2[-1] - floor_kg, 6),
+            "origin": f"{limit.source} = {limit.value:g} {limit.unit}",
+            **_below_band(o2, floor_kg),
+        }
+    return {
+        "pio2": {
+            "min_mmhg": round(pio2_mmhg(_ppo2_mmhg(min(o2), habitat)), 6),
+            "terminal_mmhg": round(pio2_mmhg(_ppo2_mmhg(o2[-1], habitat)), 6),
+            "assumed_total_pressure_mmhg": ASSUMED_TOTAL_PRESSURE_MMHG,
+            "bands": bands,
+        }
+    }
+
+
 def _water_against_standard(run_dir: Path, water: Sequence[float]) -> Dict[str, Any]:
     """The reserve in crew-days at the [V2 6109] allocation.
 
@@ -325,7 +360,9 @@ def _crew_size(run_dir: Path) -> Optional[int]:
     return int(crew) if crew is not None else None
 
 
-def inventory_metrics(run_dir: Path, bands: Dict[str, Any]) -> Dict[str, Any]:
+def inventory_metrics(
+    run_dir: Path, bands: Dict[str, Any], habitat: Optional[Habitat] = None
+) -> Dict[str, Any]:
     """Depth and duration on the two axes no standard can score here.
 
     ``reference_limits`` records O2 and water as named gaps: plant_sim models
@@ -355,6 +392,7 @@ def inventory_metrics(run_dir: Path, bands: Dict[str, Any]) -> Dict[str, Any]:
             "min_kg": round(min(o2), 6),
             "terminal_kg": round(o2[-1], 6),
             **_below_band(o2, o2_low),
+            **_o2_against_standard(o2, habitat),
         },
         "water": {
             "band_low_l": round(water_low, 6),

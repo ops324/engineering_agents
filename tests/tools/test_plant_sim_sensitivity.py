@@ -215,11 +215,11 @@ def test_ending_tank_equals_initial_plus_campaign_delta():
     rows = sweep(n_max=2, steps=8)
     row = next(item for item in rows if item.n == 2 and item.mode == "none")
     assert row.final_co2_kg == pytest.approx(row.initial_co2_kg + row.co2_net_kg)
-    assert row.final_o2_kg == pytest.approx(row.initial_o2_kg + row.o2_net_kg)
+    assert row.final_o2_kg == pytest.approx(row.initial_cabin_o2_kg + row.o2_net_kg)
     assert row.final_water_l == pytest.approx(row.initial_water_l + row.water_net_l)
     stepped = row.per_step()
     assert tank_effect(stepped, "co2", "level") == pytest.approx(row.final_co2_kg)
-    assert tank_effect(stepped, "o2", "level") == pytest.approx(row.initial_o2_kg + row.o2_net_kg)
+    assert tank_effect(stepped, "o2", "level") == pytest.approx(row.initial_cabin_o2_kg + row.o2_net_kg)
 
 
 def test_sweep_figure_row_shares_ylim_and_shows_y_ticks():
@@ -255,7 +255,7 @@ def test_yaml_matches_plant_sim_dynamics():
     assert plant.ars_capacity_kg_day == pytest.approx(
         float(scenario["plant_sim"]["ars"]["capacity_kg_day"])
     )
-    assert plant.initial_o2_kg == pytest.approx(float(sim["initial_o2_storage_kg"]))
+    assert plant.initial_cabin_o2_kg == pytest.approx(float(sim["initial_o2_storage_kg"]))
     assert plant.initial_cabin_co2_kg == pytest.approx(float(sim["initial_co2_storage_kg"]))
     assert plant.initial_product_water_l == pytest.approx(float(sim["initial_product_water_l"]))
     ars_goal, ogs_water, wrs_urine = _policy_action_goals(policy, plant)
@@ -271,7 +271,7 @@ def test_demand_and_nameplate_match_plant_model_probes():
 
     o2, co2, water = metabolism_demand_per_step(4, plant)
     model = PlantModel(
-        replace(plant, crew_size=4, survival_enabled=False, initial_o2_kg=1.0e6, initial_product_water_l=1.0e6)
+        replace(plant, crew_size=4, survival_enabled=False, initial_cabin_o2_kg=1.0e6, initial_product_water_l=1.0e6)
     )
     metab = model.advance_step()
     assert o2 == pytest.approx(metab["o2_demand_kg"])

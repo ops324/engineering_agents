@@ -7,7 +7,15 @@ description: >
 simulation:
   steps: 50  # [-] default observation steps (CLI --steps overrides)
   initial_co2_storage_kg: 1.3  # [kg] starting CO2 tank/cabin; plant_sim uses cabin
-  initial_o2_storage_kg: 8.0  # [kg] starting O2 tank (above o2_storage_low_kg)
+  # Cabin O2, not a tank. Set just inside the [V2 6003] normoxia band so the
+  # run starts compliant and drifts out of it: crew 4 burn 0.0467 kg/step, so
+  # 145 mmHg (104.25 kg) is crossed at step 13 if OGS never runs, and OGS run
+  # regularly recovers by step 50.
+  # Starting at the band edge is deliberate. The band is 7.2 kg wide and the
+  # window only burns 2.34 kg, so there is no other way to observe a breach
+  # inside 50 steps. The CO2 axis is built the same way -- 1.3 kg against a
+  # 2.0 kg threshold, 65% of the way to its own edge.
+  initial_o2_storage_kg: 104.86  # [kg] cabin O2 = PIO2 145.8 mmHg, just inside normoxia
   initial_product_water_l: 80.0  # [L] starting potable water (above product_water_low_l)
 
 backend:
@@ -27,8 +35,14 @@ mock_dynamics:  # LoopMock only; plant_sim / ros2 ignore this block
 thresholds:  # storage bands for health + labeled_rule_base triggers
   co2_storage_high_kg: 2.0  # [kg] HIGH: start ARS
   co2_storage_critical_kg: 8.0  # [kg] CRITICAL; plant_sim dwell: 2 steps then n // 2 once
-  o2_storage_low_kg: 6.0  # [kg] LOW: start OGS; plant_sim dwell: 2 steps then −1
-  o2_storage_critical_kg: 1.0  # [kg] CRITICAL; plant_sim dwell: 1 step then −2 (omit fallback: low * 0.75)
+  # O2 is cabin atmosphere, so these are the NASA-STD-3001 [V2 6003] bands
+  # expressed as cabin mass in the Habitat this branch scores against (388 m3,
+  # 295.15 K), holding total pressure at 760 mmHg -- valid while nothing leaks.
+  # reference_limits.o2_kg_for_pio2 is the conversion; keep these in step with it.
+  #   PIO2 145 mmHg = normoxia floor      -> 104.25 kg
+  #   PIO2 127 mmHg = mild hypoxia floor  ->  91.31 kg
+  o2_storage_low_kg: 104.25  # [kg] LOW: leaves the [V2 6003] normoxia band; start OGS
+  o2_storage_critical_kg: 91.31  # [kg] CRITICAL: [V2 6003] mild hypoxia floor
   product_water_low_l: 50.0  # [L] LOW: start WRS
   product_water_critical_l: 25.0  # [L] CRITICAL (unspecified fallback: product_water_low_l * 0.5)
 
@@ -88,8 +102,21 @@ plant_sim:
     bands:
       co2_storage_high_kg: 2.0  # [kg] WARNING edge for dwell
       co2_storage_critical_kg: 8.0  # [kg] CRITICAL edge for dwell
-      o2_storage_low_kg: 6.0  # [kg] WARNING edge
-      o2_storage_critical_kg: 1.0  # [kg] CRITICAL edge
+      # Deliberately NOT the same numbers as `thresholds` above, which is a
+      # departure from the rule the other two resources follow. [V2 6003] says
+      # so itself: between the normoxia floor (145 mmHg) and the mild hypoxia
+      # floor (127) the table reads "Indefinite with monitoring". Leaving the
+      # band is a standards breach; it is not a way to die. Attrition therefore
+      # starts at the mild hypoxia floor, and the absolute floor 122 mmHg
+      # (88.31 kg) is the critical edge.
+      #
+      # Neither can be reached in a 50-step run: from the normoxia floor it
+      # takes 93 hours of crew metabolism to fall to 127 mmHg, and the window
+      # is 16.7. That is intended. O2 should become lethal through a leak
+      # (roadmap R4), not through breathing -- 105 kg is 32 days of crew
+      # consumption, and a cabin emptied by respiration is not a real scenario.
+      o2_storage_low_kg: 91.31  # [kg] WARNING edge = [V2 6003] mild hypoxia floor
+      o2_storage_critical_kg: 87.71  # [kg] CRITICAL edge = [V2 6003] absolute floor (122 mmHg)
       product_water_low_l: 50.0  # [L] WARNING edge
       product_water_critical_l: 25.0  # [L] CRITICAL edge
     o2:

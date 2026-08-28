@@ -39,7 +39,10 @@ def test_build_provenance_includes_ssos_operational_records(tmp_path: Path):
         output_dir=tmp_path / "labeled",
         overrides={
             "agents": {"mode": "labeled_rule_base"},
-            "simulation": {"initial_o2_storage_kg": 8.0},
+            # Cabin O2 well inside the [V2 6003] normoxia band. At the old tank
+            # value of 8.0 kg the cabin reads as asphyxial, so OGS fires first and
+            # the first operational record is no longer the ARS one asserted below.
+            "simulation": {"initial_o2_storage_kg": 110.0},
         },
         recreate_output=True,
     )

@@ -158,7 +158,7 @@ class PlantSimEclssBackend:
             self._last_metabolism = None
         return EclssTelemetrySnapshot(
             co2_storage_kg=s.cabin_co2_kg,
-            o2_storage_kg=s.available_o2_kg,
+            o2_storage_kg=s.cabin_o2_kg,
             product_water_reserve_l=s.product_water_l,
             grey_water_collected_l=s.grey_water_l,
             ars_failure_enabled=self._failure_flags["ars"],

@@ -125,6 +125,85 @@ CO2_BANDS = (CO2_NOMINAL, CO2_OFF_NOMINAL, CO2_EMERGENCY)
 # --------------------------------------------------------------------------- #
 # O2 and water -- named gaps, deliberately not filled
 # --------------------------------------------------------------------------- #
+#: [V2 6003] is written in PIO2, inspired oxygen partial pressure, which
+#: subtracts the lung's water vapour before taking the O2 fraction. [V2 6004]
+#: for CO2 is a dry-gas partial pressure, so the two are not interchangeable.
+PH2O_LUNG_MMHG = 47.0
+#: Cabin total pressure the PIO2 conversion assumes. Holds while nothing leaks;
+#: a leak (roadmap R4) moves it, and N2 has to be modelled before then.
+ASSUMED_TOTAL_PRESSURE_MMHG = 760.0
+
+MW_O2_G_PER_MOL = 31.998
+
+
+def pio2_mmhg(ppo2_mmhg: float) -> float:
+    """Dry-gas ppO2 -> inspired PIO2, at the assumed cabin total pressure.
+
+    PIO2 = (PB - 47) * FIO2 and FIO2 = ppO2 / PB, so PIO2 = ppO2 * (1 - 47/PB).
+    """
+    pb = ASSUMED_TOTAL_PRESSURE_MMHG
+    return float(ppo2_mmhg) * (pb - PH2O_LUNG_MMHG) / pb
+
+
+def ppo2_mmhg(cabin_o2_kg: float, habitat: Optional["Habitat"]) -> float:
+    """Cabin O2 mass to dry-gas partial pressure, by the ideal gas law."""
+    if habitat is None:
+        raise HabitatUnknown("taking a partial pressure needs a habitat volume")
+    moles = float(cabin_o2_kg) * 1000.0 / MW_O2_G_PER_MOL
+    pascals = moles * GAS_CONSTANT_J_PER_MOL_K * habitat.temperature_k / habitat.volume_m3
+    return pascals / PA_PER_MMHG
+
+
+def o2_kg_for_pio2(pio2: float, habitat: Optional["Habitat"]) -> float:
+    """Cabin O2 mass that reads as ``pio2``, for expressing a limit in kg."""
+    if habitat is None:
+        raise HabitatUnknown("converting a limit to kg needs a habitat volume")
+    pb = ASSUMED_TOTAL_PRESSURE_MMHG
+    ppo2 = float(pio2) * pb / (pb - PH2O_LUNG_MMHG)
+    pascals = ppo2 * PA_PER_MMHG
+    moles = pascals * habitat.volume_m3 / (GAS_CONSTANT_J_PER_MOL_K * habitat.temperature_k)
+    return moles * MW_O2_G_PER_MOL / 1000.0
+
+
+O2_NORMOXIA_FLOOR = Limit(
+    value=145.0,
+    unit="mmHg PIO2",
+    label="normoxia target range, lower edge",
+    source=TB003,
+    requirement="NASA-STD-3001 Volume 2 [V2 6003]",
+    revision="Volume 2, Rev D, Table 6.2-1",
+    quote=(
+        "The system shall maintain inspired oxygen partial pressure (PIO2) in "
+        "accordance with Table 6.2-1. Normoxia Target Range 145-155 mmHg "
+        "(2.80-3.00 psia), acceptable duration Indefinite"
+    ),
+    url=TB003_URL,
+    note=(
+        "Leaving this band is a breach of [V2 6003]; it is not a way to die. "
+        "The table calls 145-127 mmHg mild hypoxia, 'Indefinite with "
+        "monitoring'. Occupant loss is scored from the floor below, not here."
+    ),
+)
+
+O2_MILD_HYPOXIA_FLOOR = Limit(
+    value=127.0,
+    unit="mmHg PIO2",
+    label="mild hypoxia lower limit",
+    source=TB003,
+    requirement="NASA-STD-3001 Volume 2 [V2 6003]",
+    revision="Volume 2, Rev D, Table 6.2-1",
+    quote=(
+        "Mild Hypoxia Lower Limit 127 mmHg (2.46 psia), acceptable duration "
+        "Indefinite with monitoring. 1-hour time-weighted average with an "
+        "absolute lower limit for the minimum hypoxia range of 122 mmHg"
+    ),
+    url=TB003_URL,
+)
+
+#: Ascending severity, like CO2_BANDS: the normoxia floor is the breach, the
+#: mild hypoxia floor is where occupant loss starts.
+O2_BANDS = (O2_NORMOXIA_FLOOR, O2_MILD_HYPOXIA_FLOOR)
+
 O2_PARTIAL_PRESSURE = Limit(
     value=None,
     unit="mmHg",
@@ -139,8 +218,9 @@ O2_PARTIAL_PRESSURE = Limit(
         "draws from -- not the O2 in the cabin atmosphere. There is no cabin "
         "gas state to take a partial pressure of, so [V2 6003] cannot be "
         "evaluated against this model no matter which number is supplied. "
-        "Scoring O2 against the standard needs the plant to model cabin "
-        "atmosphere first."
+        "Superseded 2026-08-28: plant_sim now holds cabin_o2_kg, so [V2 6003] "
+        "is scored through O2_NORMOXIA_FLOOR and O2_MILD_HYPOXIA_FLOOR. Kept "
+        "as the record of what the gap was and what closing it required."
     ),
 )
 
@@ -319,14 +399,12 @@ def provenance(habitat: Optional[Habitat] = None) -> Dict[str, object]:
     """
     return {
         "co2_bands": [limit.to_dict() for limit in CO2_BANDS],
+        "o2_bands": [limit.to_dict() for limit in O2_BANDS],
+        "potable_water": POTABLE_WATER_QUANTITY.to_dict(),
         "habitat": habitat.to_dict() if habitat is not None else {"status": "not chosen"},
         "unsourced": [
             limit.to_dict()
-            for limit in (
-                O2_PARTIAL_PRESSURE,
-                POTABLE_WATER_QUANTITY,
-                TOTAL_PRESSURE_INDEFINITE_EXPOSURE,
-            )
+            for limit in (TOTAL_PRESSURE_INDEFINITE_EXPOSURE,)
             if not limit.is_sourced
         ],
     }

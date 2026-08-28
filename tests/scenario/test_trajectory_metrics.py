@@ -172,8 +172,10 @@ def test_the_report_names_what_it_did_not_measure(tmp_path):
     coverage. Water left this set when [V2 6109] was sourced -- it was only ever
     a missing number, since product_water_reserve_l is a real inventory."""
     m = _scored(tmp_path, [1.0, 2.5])
-    assert set(m["not_scored"]) == {"o2"}
-    assert "supply inventory" in NOT_SCORED["o2"]
+    # Empty since O2 became cabin atmosphere and water gained [V2 6109]. The
+    # mechanism stays: a report that cannot name its gaps implies coverage.
+    assert set(m["not_scored"]) == set()
+    assert NOT_SCORED == {}
 
 
 def test_terminal_margin_is_positive_when_there_is_headroom(tmp_path):
