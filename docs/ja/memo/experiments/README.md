@@ -52,6 +52,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-016](EXP-016-scoring-resolution.md) | 判断の分解能はどの軸にあるか（再採点のみ） | **retracted**（独立監査で撤回） |
 | [EXP-017](EXP-017-no-tradeoff.md) | この運用点には代償が無い | **confirmed（負の結果）**（判断を置く場所が無い） |
 | [EXP-018](EXP-018-scarcity-without-value.md) | 希少性だけでは判断は生まれない（案1） | **confirmed（負の結果）**（案1 は退化。案3 が前提） |
+| [EXP-019](EXP-019-failure-has-no-ambiguity.md) | 故障には期限があるが曖昧さが無い（案4） | **confirmed（負の結果）**（案4 も退化。同じ壁に3回目） |
 
 ## データの所在
 
@@ -69,6 +70,7 @@ status:        confirmed | rejected | superseded | invalidated
 | `~/ea-runs/2026-08-27-v4-llm-vs-rule/` | **v4**（定格の不変条件） | LLM 24 run + 参照2（EXP-014） |
 | `~/ea-runs/2026-08-28-v5-llm-vs-rule/` | **v5**（O₂ がキャビン大気・水が [V2 6109]） | LLM 24 run + 参照2（EXP-015 / EXP-016） |
 | `~/ea-runs/2026-08-29-exp018-plan1/` | v5 | 決定的 5 run。案1 の退化（EXP-018）。`exp018.sh` で再生成可 |
+| `~/ea-runs/2026-08-29-exp019-failure-deadline/` | v5 | 決定的 61 run。案4 の退化と故障の期限（EXP-019）。`exp019.sh` で再生成可 |
 
 各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
 
