@@ -169,9 +169,10 @@ def test_an_empty_trajectory_is_refused(tmp_path):
 
 def test_the_report_names_what_it_did_not_measure(tmp_path):
     """O2 here is a supply tank, not cabin atmosphere; silence would read as
-    coverage."""
+    coverage. Water left this set when [V2 6109] was sourced -- it was only ever
+    a missing number, since product_water_reserve_l is a real inventory."""
     m = _scored(tmp_path, [1.0, 2.5])
-    assert set(m["not_scored"]) == {"o2", "water"}
+    assert set(m["not_scored"]) == {"o2"}
     assert "supply inventory" in NOT_SCORED["o2"]
 
 

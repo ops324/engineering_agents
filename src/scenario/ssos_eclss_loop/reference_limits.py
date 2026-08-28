@@ -71,6 +71,8 @@ TB004 = "OCHMO-TB-004 Carbon Dioxide (CO2), Rev D, 10-Mar-26"
 TB004_URL = "https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-004-carbon-dioxide.pdf"
 TB003 = "OCHMO-TB-003 Habitable Atmosphere, Rev A, 30-Nov-2023"
 TB003_URL = "https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-003-habitable-atmosphere.pdf"
+TB027 = "OCHMO-TB-027 Water -- Human, Rev C, 11/29/2023"
+TB027_URL = "https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-027-water.pdf"
 
 
 # --------------------------------------------------------------------------- #
@@ -143,16 +145,32 @@ O2_PARTIAL_PRESSURE = Limit(
 )
 
 POTABLE_WATER_QUANTITY = Limit(
-    value=None,
+    value=2.5,
     unit="L/crew-day",
-    label="potable water quantity",
-    source=UNSOURCED,
+    label="potable water for hydration, minimum allocation",
+    source=TB027,
     requirement="NASA-STD-3001 Volume 2 [V2 6109]",
+    revision="Volume 2, Rev D (table reproduced in TB-027 from Rev C Table 4)",
+    quote=(
+        "[V2 6109] Water Quantity: The system shall provide a minimum water "
+        "quantity as specified in Table 6.3-1 -- Water Quantities and "
+        "Temperatures, for the expected needs of each mission, which are "
+        "considered mutually independent. Table: Potable Water for Hydration, "
+        "Minimum 2.5 L (84.5 fl oz) per crewmember per day"
+    ),
+    url=TB027_URL,
     note=(
-        "Requirement identified in OCHMO-TB-002; the numeric allocation was "
-        "not read off a primary document. Unlike O2 this is only a missing "
-        "number -- product_water_reserve_l is a real inventory and can be "
-        "scored as soon as the value is sourced."
+        "A provision rate, not a consumption rate, and the two are different "
+        "quantities. plant_sim's crew draws 2.28 L/crew-day, which is fixed by "
+        "a mass balance the config enforces (urine 1.50 + condensate 0.75 + "
+        "unrecoverable 0.03 must equal potable intake). 2.5 is what the system "
+        "must be able to supply; 2.28 is what passes through the crew. The "
+        "standard sets no reserve horizon -- it says 'for the expected needs "
+        "of each mission' -- so the reserve is reported as crew-days at this "
+        "allocation rather than against an invented floor.\n"
+        "The table's other two rows carry no scalar for this scenario: personal "
+        "hygiene is 'mission dependent', and eye irrigation is 500 mL per "
+        "crewmember, a one-off rather than a daily rate."
     ),
 )
 

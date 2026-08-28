@@ -72,7 +72,63 @@ O₂    ❌ [V2 6003] — 数値が未出典、かつ**モデルが間違って�
 
 ---
 
-## R1 — 水の基準値を出典から取る（無料・物理を触らない）
+## R1 — 水の基準値を出典から取る ✅ 完了（2026-08-28）
+
+```
+出典   OCHMO-TB-027 Water -- Human, Rev C, 11/29/2023
+       https://www.nasa.gov/wp-content/uploads/2023/12/ochmo-tb-027-water.pdf
+要求   NASA-STD-3001 Volume 2 [V2 6109] Water Quantity
+値     Potable Water for Hydration: Minimum 2.5 L (84.5 fl oz) per crewmember per day
+```
+
+**表の他の2行はスカラーにならないので採らなかった** — 個人衛生は "Mission dependent"、
+洗眼は「乗員あたり 500 mL」で日次レートではない。
+
+### 2.28 と 2.5 は矛盾しない（確認済み）
+
+一見 plant_sim の `potable_water_kg_day_person: 2.28` が規格の最低 2.5 を下回るように見えるが、
+**別の量である。**
+
+```python
+# config.py の不変条件
+req(urine 1.50 + condensate 0.75 + unrecoverable 0.03 == potable 2.28,
+    "crew water outputs must equal potable intake")
+```
+
+2.28 は**乗員を通過する量**で、水収支が閉じるよう固定されている。2.5 は
+**システムが供給できねばならない量**。2.5 ≥ 2.28 は要求として自然である。
+
+### 採点の形 — 「乗員何日ぶんか」
+
+[V2 6109] は**供給レート**であって在庫の下限ではない。標準は
+"for the expected needs of each mission" としか言わず**保有期間を定めていない**ので、
+こちらで床を発明せず、在庫を規格の配給率で割って**乗員日**に換算するに留めた。
+
+```
+min_crew_days = product_water_reserve_l / (2.5 L/crew-day x crew)
+```
+
+**plant_sim 自身の 2.28 で割らない。** それは run を自分自身で採点することになる。
+
+### 手戻りゼロの実証
+
+既存 run を**1本も再実行せず**、再採点だけで新しい軸が入った:
+
+```
+v3 ルール  最小 7.90 乗員日    v4 ルール  最小 7.89 乗員日
+v4 no-op   最小 7.49 乗員日    v4 llm_r4  最小 7.74 乗員日
+```
+
+**世代を跨いで採点し直せる**（telemetry を捨てていないため）。
+
+```
+規格に紐づいた軸:  CO₂ ✅  水 ✅  O₂ ❌  → 2/3
+`ea score` の "not scored against a standard" は o2 のみになった
+```
+
+---
+
+<details><summary>着手前の計画（記録として残す）</summary>
 
 **最初にやる。いちばん安く、いちばん確実に 1/3 → 2/3 になる。**
 
@@ -87,6 +143,8 @@ O₂    ❌ [V2 6003] — 数値が未出典、かつ**モデルが間違って�
 | 完成の定義 | `ea score` から `not scored against a standard: water` が消える |
 | 検証 | 既存の v3・v4 run を再採点して値が入ること |
 | 手戻り | **ゼロ** |
+
+</details>
 
 ## R2 — 酸素をキャビン大気にする（物理・失敗モードは足さない）
 

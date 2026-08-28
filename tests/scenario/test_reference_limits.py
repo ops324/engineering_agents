@@ -59,10 +59,24 @@ def test_the_bands_ascend_in_severity():
 def test_unsourced_limits_carry_no_value():
     """A plausible number with no document is worse than none: it scores runs
     while looking grounded."""
-    for limit in (O2_PARTIAL_PRESSURE, POTABLE_WATER_QUANTITY):
+    for limit in (O2_PARTIAL_PRESSURE,):
         assert limit.value is None
         assert not limit.is_sourced
         assert limit.requirement, "an unsourced limit must still name what is missing"
+
+
+def test_potable_water_is_sourced_and_says_which_quantity_it_is():
+    """[V2 6109] is a provision rate, and plant_sim's 2.28 L/crew-day is a
+    throughput held by a mass balance. Scoring one against the other would be a
+    category error, so the limit carries the distinction it is read with."""
+    assert POTABLE_WATER_QUANTITY.is_sourced
+    assert POTABLE_WATER_QUANTITY.value == 2.5
+    assert POTABLE_WATER_QUANTITY.unit == "L/crew-day"
+    assert "[V2 6109]" in POTABLE_WATER_QUANTITY.quote
+    assert "2.5 L" in POTABLE_WATER_QUANTITY.quote
+    assert POTABLE_WATER_QUANTITY.url.startswith("https://www.nasa.gov/")
+    assert "provision rate, not a consumption rate" in POTABLE_WATER_QUANTITY.note
+    assert "2.28" in POTABLE_WATER_QUANTITY.note
 
 
 def test_o2_records_that_the_model_cannot_be_scored_at_all():

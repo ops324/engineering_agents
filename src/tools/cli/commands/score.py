@@ -184,6 +184,17 @@ def score(
                 f"   steps below {water['steps_below']:<4} longest {water['longest_streak_below']:<4}"
                 f" deficit {water['deficit_integral']:.4g} L*steps"
             )
+            # Water carries a sourced allocation as of [V2 6109]; the house
+            # band above stays because it is what attrition actually reads.
+            if water.get("allocation_l_per_day") is not None:
+                typer.echo(
+                    f"  potable water reserve, in crew-days at the standard allocation\n"
+                    f"    min {water['min_crew_days']:.4g} crew-days"
+                    f"   terminal {water['terminal_crew_days']:.4g} crew-days"
+                    f"   ({water['allocation_l_per_day']:.4g} L/day)\n"
+                    f"    from {water['allocation_origin']}\n"
+                    f"    the standard sets no reserve horizon, so this is reported, not graded"
+                )
     raise typer.Exit(exit_codes.SUCCESS)
 
 

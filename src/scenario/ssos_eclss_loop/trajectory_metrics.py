@@ -37,9 +37,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+import yaml
+
 from scenario.ssos_eclss_loop.physics_gate import evaluate_physics_gate, gate_passed
 from scenario.ssos_eclss_loop.reference_limits import (
     CO2_BANDS,
+    POTABLE_WATER_QUANTITY,
     Habitat,
     co2_kg_for_ppco2,
     provenance as limits_provenance,
@@ -53,7 +56,6 @@ NOT_SCORED = {
         "plant_sim models O2 as available_o2_kg, a supply inventory, not cabin "
         "atmosphere; there is no exposure to integrate"
     ),
-    "water": "product water is an inventory, not an exposure",
 }
 
 
@@ -287,6 +289,42 @@ def trajectory_metrics(
     }
 
 
+def _water_against_standard(run_dir: Path, water: Sequence[float]) -> Dict[str, Any]:
+    """The reserve in crew-days at the [V2 6109] allocation.
+
+    [V2 6109] is a provision rate -- what the system must be able to supply --
+    and it sets no reserve horizon, saying only "for the expected needs of each
+    mission". So the reserve is converted to crew-days at that rate rather than
+    compared to a floor this repository would have had to invent. More days is
+    better; the anchor is sourced and nothing here can edit it.
+
+    Deliberately not divided by plant_sim's own 2.28 L/crew-day. That figure is
+    what passes through the crew, held there by a mass balance the config
+    enforces, and dividing by it would score the run against itself.
+    """
+    limit = POTABLE_WATER_QUANTITY
+    crew = _crew_size(run_dir)
+    if not limit.is_sourced or crew is None or crew <= 0:
+        return {}
+    per_day = float(limit.value) * crew
+    return {
+        "allocation_l_per_day": round(per_day, 6),
+        "min_crew_days": round(min(water) / per_day, 6),
+        "terminal_crew_days": round(water[-1] / per_day, 6),
+        "allocation_origin": f"{limit.requirement} = {limit.value:g} {limit.unit} x {crew} crew",
+    }
+
+
+def _crew_size(run_dir: Path) -> Optional[int]:
+    """Crew the run was configured for, from its own recorded config."""
+    path = Path(run_dir) / "scenario_config.yaml"
+    if not path.is_file():
+        return None
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    crew = ((config.get("plant_sim") or {}).get("crew") or {}).get("size")
+    return int(crew) if crew is not None else None
+
+
 def inventory_metrics(run_dir: Path, bands: Dict[str, Any]) -> Dict[str, Any]:
     """Depth and duration on the two axes no standard can score here.
 
@@ -323,6 +361,7 @@ def inventory_metrics(run_dir: Path, bands: Dict[str, Any]) -> Dict[str, Any]:
             "min_l": round(min(water), 6),
             "terminal_l": round(water[-1], 6),
             **_below_band(water, water_low),
+            **_water_against_standard(run_dir, water),
         },
     }
 
