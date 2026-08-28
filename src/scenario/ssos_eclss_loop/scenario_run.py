@@ -294,7 +294,19 @@ def _scoring_bar_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -
 #: twice over: it is a run knob, and an audit (EXP-021) confirmed it does not
 #: reach the deterministic arm at all -- seeds 101, 202 and 999 give
 #: byte-identical telemetry.
-_OPERATING_POINT_IGNORED = {"simulation.steps", "simulation.seed"}
+#:
+#: ``simulation.steps`` used to sit here beside it, on the strength of seed's
+#: evidence rather than its own. It does not share that evidence. Steps is the
+#: denominator of the scoring: ``_score_a`` divides both its CO2 exposure and
+#: its o2/water deficits by ``band × steps``, and a shorter run has less time
+#: to accumulate any of them. An audit (2026-08-29, EXP-022) scored
+#: ``--actor-mode none --steps 2`` at 86.10 of 90 -- 1.75 above the published
+#: rule arm, 16.72 above the same arm at 50 steps -- with both guards reading
+#: ``[]`` and no warning printed anywhere. One flag, and the run that does
+#: nothing wins. The published runs all pass ``--steps 50`` against a
+#: scenario.yaml that says 50, so they stay clean and this costs no sweep a
+#: false positive.
+_OPERATING_POINT_IGNORED = {"simulation.seed"}
 
 
 def _operating_point_modified(

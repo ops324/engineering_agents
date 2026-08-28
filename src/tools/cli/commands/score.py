@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import List, Optional
 
@@ -85,6 +86,34 @@ def _operating_point_moved_by(run_dir: Path) -> Optional[List[str]]:
     changed = summary.get("operating_point_modified")
     return None if changed is None else [str(c) for c in changed]
 
+
+def _habitat_for(habitat_volume_m3: Optional[float]) -> Habitat:
+    """The habitat to score in: the caller's volume, or the scenario's.
+
+    Every partial pressure downstream is ``nRT/V``, so a volume that is not a
+    positive real number does not produce a wrong reading -- it produces a
+    reading that means nothing while still being printed under the name of
+    NASA-STD-3001. An audit (2026-08-29, EXP-022) scored a run with
+    ``--habitat-volume-m3=-5`` and got ``B 資源余裕 20.0 / 20`` on a card
+    headed ``NASA-STD-3001 at -5 m3``: at negative volume the CO2 band comes
+    out negative, every peak is "below" it, and the margin axis pays full
+    marks. The same audit found ``--habitat-volume-m3 0`` silently scored at
+    388 -- the old test was ``if habitat_volume_m3``, and 0.0 is falsy, so the
+    one value that cannot be a habitat was the one that looked like no request
+    at all.
+    """
+    if habitat_volume_m3 is None:
+        return SCENARIO_HABITAT
+    volume = float(habitat_volume_m3)
+    if not math.isfinite(volume) or volume <= 0.0:
+        raise typer.BadParameter(
+            f"--habitat-volume-m3 must be a positive volume, got {volume:g}. "
+            "Partial pressure is nRT/V; there is no reading to take in a "
+            "cabin of that size."
+        )
+    return Habitat(volume_m3=volume)
+
+
 def _build_yardstick(
     *, baseline: Optional[str], habitat_volume_m3: Optional[float], root: Path
 ) -> Yardstick:
@@ -105,12 +134,7 @@ def _build_yardstick(
         # the bar nothing in this repository can edit. A frozen baseline is
         # sound too, but only as long as that baseline predates every proposal
         # in the chain -- and this is an iterative loop.
-        habitat = (
-            Habitat(volume_m3=float(habitat_volume_m3))
-            if habitat_volume_m3 is not None
-            else SCENARIO_HABITAT
-        )
-        return from_reference_limits(habitat)
+        return from_reference_limits(_habitat_for(habitat_volume_m3))
     baseline_dir = _resolve_run(str(baseline), root)
     summary_path = baseline_dir / "summary.json"
     if not summary_path.is_file():
@@ -221,7 +245,7 @@ def score(
             # baseline, and then O2 stays a house measure rather than
             # borrowing a volume nobody chose.
             scored_habitat = (
-                Habitat(volume_m3=float(habitat_volume_m3))
+                _habitat_for(habitat_volume_m3)
                 if habitat_volume_m3 is not None
                 else None
             )
@@ -315,11 +339,7 @@ def evaluate(
     """
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    yardstick = from_reference_limits(
-        Habitat(volume_m3=float(habitat_volume_m3))
-        if habitat_volume_m3 is not None
-        else SCENARIO_HABITAT
-    )
+    yardstick = from_reference_limits(_habitat_for(habitat_volume_m3))
     # Checked before either arm runs: an unknown band otherwise raises KeyError
     # after both simulations have already been paid for.
     known = {b.name for b in yardstick.bands}
@@ -435,11 +455,7 @@ def scorecard(
             f"(EXP-010). {remedy}"
         )
         raise typer.Exit(exit_codes.USER_ERROR)
-    habitat = (
-        None
-        if yardstick == "run"
-        else (Habitat(volume_m3=float(habitat_volume_m3)) if habitat_volume_m3 else SCENARIO_HABITAT)
-    )
+    habitat = None if yardstick == "run" else _habitat_for(habitat_volume_m3)
     try:
         card = score_run(run_dir, habitat=habitat)
     except (NotScorable, TelemetryUnreadable) as exc:
@@ -470,6 +486,20 @@ def scorecard(
     typer.echo(f"  yardstick: {card['yardstick']}")
     # Printed, not just recorded: the audit's 90.000 no-op was read off this
     # very output, and nothing on it said the scenario had been made easier.
+    #
+    # The bar is printed on the same terms. Under ``standard`` a moved
+    # ``thresholds`` does not block -- CO2 is scored against NASA at a habitat
+    # volume, so the run's own line no longer decides that axis -- but it still
+    # decides the health status the occupant-survival axis reads. An audit
+    # (2026-08-29, EXP-022) moved ``co2_storage_{high,critical}_kg`` to 99999
+    # and took the same physics, with the same two occupants lost, from 48.93
+    # to 52.77 of 90: the alarm simply never rang, so no step counted as
+    # critical. It was refused under ``run`` and silent here, which is the
+    # weaker guard sitting on the default yardstick.
+    bar_moved = card.get("scoring_bar_modified")
+    if bar_moved:
+        typer.echo(f"  ⚠ 採点の基準を変更: {', '.join(bar_moved)}")
+        typer.echo("    — この物差しでは拒否されないが、run 自身が引いた線が残っている")
     operating_point = card.get("operating_point_modified")
     if operating_point:
         typer.echo(f"  ⚠ 運用点を変更: {', '.join(operating_point)}")

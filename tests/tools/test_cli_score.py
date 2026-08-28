@@ -319,6 +319,7 @@ def test_an_easier_scenario_is_recorded_even_though_the_bar_is_clean(tmp_path):
     assert summary["scoring_bar_modified"] == []
     assert summary["operating_point_modified"] == [
         "simulation.initial_o2_storage_kg",
+        "simulation.steps",  # a shorter run is an easier one -- EXP-022
         "plant_sim.crew.activity_factor",
         "inject_failures",  # from OVERRIDES, and it belongs on this list too
     ]
@@ -329,20 +330,44 @@ def test_an_easier_scenario_is_recorded_even_though_the_bar_is_clean(tmp_path):
     assert "plant_sim.crew.activity_factor" in scored.stdout
 
 
-def test_run_knobs_are_not_read_as_a_changed_operating_point(tmp_path):
-    """steps and seed select a run; they do not describe the plant. Flagging
-    them would put the warning on every sweep and teach everyone to ignore it.
-    seed is doubly inert here -- EXP-021 found 101, 202 and 999 give
-    byte-identical telemetry, so it does not reach the deterministic arm at all.
+def test_seed_selects_a_run_and_is_not_an_operating_point(tmp_path):
+    """seed selects a run; it does not describe the plant. Flagging it would put
+    the warning on every sweep and teach everyone to ignore it. It is doubly
+    inert here -- EXP-021 found 101, 202 and 999 give byte-identical telemetry,
+    so it does not reach the deterministic arm at all.
+
+    ``steps`` used to be asserted here beside it. It does not belong: see
+    ``test_a_shorter_run_is_an_easier_run_and_says_so`` for what that cost.
     """
-    plain = _run_with(tmp_path, "plain", {"simulation": {"steps": 12}})
+    plain = _run_with(tmp_path, "plain", {"simulation": {"seed": 777}})
     summary = json.loads((plain / "summary.json").read_text(encoding="utf-8"))
     # inject_failures is on in OVERRIDES and *is* an operating point change.
     assert summary["operating_point_modified"] == ["inject_failures"]
 
     scored = runner.invoke(app, ["scorecard", str(plain), "--yardstick", "run"])
-    assert "simulation.steps" not in scored.stdout
     assert "simulation.seed" not in scored.stdout
+
+
+def test_a_shorter_run_is_an_easier_run_and_says_so(tmp_path):
+    """steps is the denominator of the scoring, not a run knob.
+
+    ``_score_a`` divides CO2 exposure and the o2/water deficits by
+    ``band × steps``, so a shorter run has less time to accumulate any of them.
+    An audit (2026-08-29, EXP-022) took ``--actor-mode none`` from 69.38 of 90
+    at 50 steps to 86.10 at 2 -- past the published rule arm's 84.35 -- with
+    both guards empty and no warning printed. The arm did nothing; the run was
+    simply stopped before the cabin got bad. Nothing said so, because steps was
+    ignored on seed's evidence rather than its own.
+    """
+    short = _run_with(tmp_path, "cut_short", {"simulation": {"steps": 2}})
+    summary = json.loads((short / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scoring_bar_modified"] == []  # the bar is genuinely clean
+    assert "simulation.steps" in summary["operating_point_modified"]
+
+    scored = runner.invoke(app, ["scorecard", str(short), "--yardstick", "run"])
+    assert scored.exit_code == 0
+    assert "運用点を変更" in scored.stdout
+    assert "simulation.steps" in scored.stdout
 
 
 def test_a_run_predating_the_record_is_scored_but_marked_unverified(tmp_path, run_dir):
@@ -376,3 +401,44 @@ def test_the_run_s_own_yardstick_takes_no_habitat(tmp_path, run_dir):
         app, ["scorecard", str(run_dir), "--yardstick", "run", "--habitat-volume-m3", "388"]
     )
     assert result.exit_code != 0
+
+
+def test_a_habitat_that_is_not_a_volume_is_refused(tmp_path):
+    """ppCO2 is nRT/V. A volume that is not a positive real is not a wrong
+    reading, it is no reading -- printed under the name of NASA-STD-3001.
+
+    An audit (2026-08-29, EXP-022) scored a run at --habitat-volume-m3=-5 and
+    got B 資源余裕 20.0/20 on a card headed "NASA-STD-3001 at -5 m3": the band
+    comes out negative, every peak is below it, and the margin axis pays full
+    marks. 0 was worse than refused -- it was falsy, so it fell back to 388
+    without saying the request had been dropped.
+    """
+    run = _run_with(tmp_path, "habitat_check", {})
+    for bad in ("-5", "0"):
+        refused = runner.invoke(app, ["scorecard", str(run), "--habitat-volume-m3", bad])
+        assert refused.exit_code != 0
+        assert "positive volume" in (refused.output or refused.stderr or "")
+
+    ok = runner.invoke(app, ["scorecard", str(run), "--habitat-volume-m3", "388"])
+    assert ok.exit_code == 0
+    assert "NASA-STD-3001 at 388 m3" in ok.stdout
+
+
+def test_the_standard_yardstick_says_when_the_run_moved_its_own_bar(tmp_path):
+    """Under ``standard`` a moved ``thresholds`` does not block -- CO2 is scored
+    against NASA -- but it still sets the health status attrition reads.
+
+    An audit (2026-08-29, EXP-022) moved co2_storage_{high,critical}_kg to 99999
+    and took the same physics, with the same occupants lost, from 48.93 to 52.77
+    of 90: the alarm never rang, so no step counted as critical. ``run`` refused
+    it and ``standard`` printed nothing at all, which put the weaker guard on
+    the default yardstick.
+    """
+    moved = _run_with(tmp_path, "quiet_alarm", {"thresholds": {"co2_storage_high_kg": 99999.0}})
+    summary = json.loads((moved / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scoring_bar_modified"] == ["thresholds"]
+
+    scored = runner.invoke(app, ["scorecard", str(moved), "--yardstick", "standard"])
+    assert scored.exit_code == 0, scored.output
+    assert "採点の基準を変更" in scored.stdout
+    assert "thresholds" in scored.stdout
