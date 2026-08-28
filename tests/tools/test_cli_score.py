@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from scenario.jobs.executor import execute_run
 from scenario.jobs.spec import RunSpec
 from tools.cli.commands.score import NOT_SCORABLE_EXIT
+from tools.cli import exit_codes
 from tools.cli.main import app
 
 runner = CliRunner()
@@ -487,3 +488,43 @@ def test_a_run_from_before_the_guard_says_so_on_both_yardsticks(tmp_path):
         scored = runner.invoke(app, ["scorecard", str(run), "--yardstick", flag])
         assert scored.exit_code == 0, scored.output
         assert "predates scoring_bar_modified" in scored.stdout
+
+
+def test_a_run_that_moved_its_own_habitat_cannot_be_scored(tmp_path):
+    """The habitat converts every scored kg into the mmHg the standard is written
+    in, so choosing it is choosing the bar.
+
+    An audit (2026-08-29, EXP-022) swept 26 runs from 0.5 to 1e6 m3 and moved
+    every one by 16.00 points -- the whole CO2 allocation of A and B -- gaining
+    up to 8.12 over an honest 388. Recording the volume in the run is only half
+    of it: put it under plant_sim.habitat and _operating_point_modified records
+    it while _scoring_bar_modified, the one that refuses, does not.
+    """
+    lied = _run_with(tmp_path, "roomy", {"plant_sim": {"habitat": {"volume_m3": 3000.0}}})
+    summary = json.loads((lied / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scoring_bar_modified"] == ["plant_sim.habitat"]
+    assert "plant_sim.habitat" not in (summary["operating_point_modified"] or [])
+
+    for flag in ("run", "standard"):
+        refused = runner.invoke(app, ["scorecard", str(lied), "--yardstick", flag])
+        assert refused.exit_code == exit_codes.USER_ERROR
+        assert "moved its own bar" in (refused.output or refused.stderr or "")
+
+
+def test_the_scorer_may_still_sweep_volume_but_the_card_says_so(tmp_path):
+    """Sweeping volume is how 388 was chosen; the flag stays. What changes is
+    that the run now names a habitat, so a card scored at another one can say it
+    was overridden instead of reading like a card scored at the run's own."""
+    run = _run_with(tmp_path, "declares_388", {})
+    card = json.loads(runner.invoke(app, ["scorecard", str(run), "--json"]).stdout)
+    assert card["habitat_declared_m3"] == 388.0
+    assert card["habitat_overridden"] is False
+    assert card["yardstick"] == "NASA-STD-3001 at 388 m3"
+
+    swept = json.loads(
+        runner.invoke(
+            app, ["scorecard", str(run), "--habitat-volume-m3", "3000", "--json"]
+        ).stdout
+    )
+    assert swept["habitat_overridden"] is True
+    assert "run declares 388 m3 -- overridden" in swept["yardstick"]

@@ -49,6 +49,26 @@ thresholds:  # storage bands for health + labeled_rule_base triggers
 # Canonical plant_sim parameters (source of truth for occupant count and rates).
 # Python PlantSimConfig() defaults remain for unit tests / library construction.
 plant_sim:
+  # The cabin the run is scored in. It touches no physics -- plant_sim tracks
+  # masses and never takes a partial pressure -- but every mmHg the scorecard
+  # compares to NASA-STD-3001 is nRT/V, so it is part of the bar and is diffed
+  # by `_scoring_bar_modified`, not merely recorded.
+  #
+  # It lives here because the run had no way to say it. `volume_m3` existed only
+  # in reference_limits.SCENARIO_HABITAT and in the `--habitat-volume-m3` flag,
+  # so the number was chosen at scoring time with nothing to check it against:
+  # an audit (2026-08-29, EXP-022) swept 26 runs across 0.5 to 1e6 m3 and moved
+  # every one of them by 16.00 points, the whole of A's and B's CO2 allocation,
+  # gaining up to 8.12 over an honest 388.
+  #
+  # 388 m3 is the modelling choice of 2026-08-24, unchanged: it is the volume
+  # that puts this scenario's own alarms below [V2 6004] rather than above it,
+  # and the O2 thresholds (104.25 / 91.31 kg) are its conversions. Replace it
+  # when the modelled module is known; nothing physical moves, every run is
+  # simply re-scored.
+  habitat:
+    volume_m3: 388.0  # [m3] cabin gas volume; kg -> mmHg for every scored axis
+    temperature_k: 295.15  # [K] 22 C, the canonical temperature the bands assume
   time:
     step_seconds: 1200  # [s] metabolism / observation interval (20 min)
     # Action quanta. The rated-capacity invariant clamps each to step_seconds, so a

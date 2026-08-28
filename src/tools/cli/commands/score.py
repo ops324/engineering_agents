@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
+import yaml
 
 from scenario.jobs.resolve import default_results_root
 from scenario.ssos_eclss_loop.physics_gate import TelemetryUnreadable
@@ -112,6 +113,35 @@ def _habitat_for(habitat_volume_m3: Optional[float]) -> Habitat:
             "cabin of that size."
         )
     return Habitat(volume_m3=volume)
+
+
+def _habitat_declared_by(run_dir: Path) -> Optional[Habitat]:
+    """The cabin the run itself names, or None if it is from before it could.
+
+    Read from ``scenario_config.yaml`` -- the effective config written beside the
+    run -- so a run that moved it trips ``_scoring_bar_modified`` and is refused
+    before this is ever consulted. Runs from before ``plant_sim.habitat`` existed
+    return None and fall back to :data:`SCENARIO_HABITAT`, which is the same 388
+    they were always scored at.
+    """
+    path = Path(run_dir) / "scenario_config.yaml"
+    if not path.is_file():
+        return None
+    try:
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    declared = ((config.get("plant_sim") or {}).get("habitat") or {}).get("volume_m3")
+    if declared is None:
+        return None
+    return Habitat(
+        volume_m3=float(declared),
+        temperature_k=float(
+            ((config.get("plant_sim") or {}).get("habitat") or {}).get("temperature_k")
+            or SCENARIO_HABITAT.temperature_k
+        ),
+        source=f"declared by {Path(run_dir).name}",
+    )
 
 
 def _build_yardstick(
@@ -440,14 +470,25 @@ def scorecard(
     # under either yardstick. The refusal below used to name ``--yardstick
     # standard`` as the way out while that path never ran this check at all
     # (EXP-021): the escape hatch it pointed at was the unguarded one.
-    survival_moved = [m for m in (moved or []) if m.startswith("plant_sim.survival")]
-    blocking = list(moved or []) if yardstick == "run" else survival_moved
+    # ``plant_sim.habitat`` joins survival on the list that blocks under either
+    # yardstick, and it is the more direct of the two here: under ``standard``
+    # the bands *are* the standard converted through this volume, so a run that
+    # chose its own volume chose the kg it is compared against. An audit
+    # (EXP-022) moved 26 runs by 16.00 points that way, the whole CO2 allocation
+    # of A and B. ``run`` blocks on it too, because attrition read the same
+    # config.
+    unscorable_either_way = [
+        m for m in (moved or [])
+        if m.startswith("plant_sim.survival") or m == "plant_sim.habitat"
+    ]
+    blocking = list(moved or []) if yardstick == "run" else unscorable_either_way
     if blocking:
         remedy = (
             "Score it with --yardstick standard."
-            if yardstick == "run" and not survival_moved
-            else "No yardstick can score it: attrition and the o2/water bands "
-            "came from the moved values. Re-run without moving them."
+            if yardstick == "run" and not unscorable_either_way
+            else "No yardstick can score it: attrition, the o2/water bands and "
+            "the volume every mmHg is taken in came from the moved values. "
+            "Re-run without moving them."
         )
         print_error(
             f"this run moved its own bar ({', '.join(blocking)}), so scoring it "
@@ -455,7 +496,20 @@ def scorecard(
             f"(EXP-010). {remedy}"
         )
         raise typer.Exit(exit_codes.USER_ERROR)
-    habitat = None if yardstick == "run" else _habitat_for(habitat_volume_m3)
+    # The run's own declaration is the default now that it has one. The flag
+    # still works -- sweeping volume is how 388 was chosen in the first place --
+    # but a card produced that way says so, instead of reading exactly like one
+    # scored at the habitat the run was built for.
+    declared = _habitat_declared_by(run_dir)
+    habitat = (
+        None
+        if yardstick == "run"
+        else (
+            _habitat_for(habitat_volume_m3)
+            if habitat_volume_m3 is not None
+            else (declared or SCENARIO_HABITAT)
+        )
+    )
     try:
         card = score_run(run_dir, habitat=habitat)
     except (NotScorable, TelemetryUnreadable) as exc:
@@ -466,6 +520,15 @@ def scorecard(
         if yardstick == "run"
         else f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
     )
+    card["habitat_declared_m3"] = None if declared is None else declared.volume_m3
+    card["habitat_overridden"] = bool(
+        yardstick != "run"
+        and declared is not None
+        and habitat is not None
+        and habitat.volume_m3 != declared.volume_m3
+    )
+    if card["habitat_overridden"]:
+        card["yardstick"] += f" (run declares {declared.volume_m3:g} m3 -- overridden)"
     # On both yardsticks, not only ``run``. A run from before the guard landed
     # cannot say whether it moved its own bar, and ``plant_sim.survival`` decides
     # attrition under either yardstick -- so the caveat belongs on both. It was

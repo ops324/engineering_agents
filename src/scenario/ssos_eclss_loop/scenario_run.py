@@ -269,6 +269,15 @@ def _scoring_bar_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -
     moved: List[str] = []
     if (effective.get("thresholds") or {}) != (pristine.get("thresholds") or {}):
         moved.append("thresholds")
+    # The habitat converts every scored kg into the mmHg the standard is written
+    # in, so it is the bar even though it touches no physics: an audit
+    # (2026-08-29, EXP-022) moved 26 runs by 16.00 points -- the whole CO2
+    # allocation of A and B -- by changing nothing but the volume. It is diffed
+    # here rather than under _operating_point_modified, which only records.
+    pristine_habitat = (pristine.get("plant_sim") or {}).get("habitat") or {}
+    effective_habitat = (effective.get("plant_sim") or {}).get("habitat") or {}
+    if effective_habitat != pristine_habitat:
+        moved.append("plant_sim.habitat")
     pristine_survival = (pristine.get("plant_sim") or {}).get("survival") or {}
     effective_survival = (effective.get("plant_sim") or {}).get("survival") or {}
     # Every key under ``survival``, not the two that had been broken so far.
@@ -339,8 +348,9 @@ def _operating_point_modified(
     walk(pristine.get("simulation") or {}, effective.get("simulation") or {}, "simulation")
     pristine_plant = dict(pristine.get("plant_sim") or {})
     effective_plant = dict(effective.get("plant_sim") or {})
-    pristine_plant.pop("survival", None)
-    effective_plant.pop("survival", None)
+    for owned_by_the_bar in ("survival", "habitat"):
+        pristine_plant.pop(owned_by_the_bar, None)
+        effective_plant.pop(owned_by_the_bar, None)
     walk(pristine_plant, effective_plant, "plant_sim")
     for key in ("inject_failures", "subsystem_failures"):
         if effective.get(key, absent) != pristine.get(key, absent):
