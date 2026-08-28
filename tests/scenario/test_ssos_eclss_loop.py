@@ -884,3 +884,38 @@ def test_plant_sim_skips_physics_floor_on_final_step(tmp_path: Path):
     assert "o2_physics" in lost_events[0].get("limiting", [])
     assert lost_events[0]["step"] == 0
 
+
+
+def test_o2_still_kills_below_the_mild_hypoxia_floor(tmp_path: Path):
+    """Cabin O2 is not a harmless axis, and the docs briefly said it was.
+
+    Making O2 cabin atmosphere moved the start to 104.86 kg, 13.55 kg above the
+    [V2 6003] mild hypoxia floor, and crew metabolism only burns 2.34 kg in a
+    50-step run -- 97 hours would be needed against a 16.7 hour window. That is
+    "breathing cannot empty the cabin in this window", which is physically
+    right for 32 days of supply. It is not "O2 cannot kill". The lethal
+    mechanism is live, and request_o2 and a leak (roadmap R4) both reach it.
+    """
+    def crew_left(start_kg: float) -> int:
+        run_dir = run_scenario(
+            "ssos_eclss_loop",
+            output_dir=tmp_path / f"o2_{start_kg:g}",
+            overrides={
+                "backend": {"kind": "plant_sim"},
+                "agents": {"mode": "none"},
+                "simulation": {
+                    "steps": 6,
+                    "initial_o2_storage_kg": start_kg,
+                    "initial_co2_storage_kg": 0.5,
+                },
+                "plant_sim": {"crew": {"size": 4}, "survival": {"enabled": True}},
+            },
+            recreate_output=True,
+        )
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+        return summary["crew_remaining"]
+
+    assert crew_left(104.86) == 4, "the scenario's own start must be survivable"
+    assert crew_left(95.0) == 4, "above the mild hypoxia floor, nobody is taken"
+    assert crew_left(91.0) < 4, "below 91.31 kg the [V2 6003] floor takes people"
+    assert crew_left(87.0) == 0, "below the 122 mmHg absolute floor, nobody survives"
