@@ -146,7 +146,7 @@ EXP-013 は完走済みで、v3 の基準点は telemetry つきで `~/ea-runs/`
 ```
 テスト: 605 passed / 5 skipped / 0 failed
         変更前のベースラインは 601 passed / 5 skipped / 0 failed（+4 は新規テスト）
-        ※ STATE-2026-08-27 の「587 passed / 14 failed」は古い記述だった
+        ※ STATE.md の「587 passed / 14 failed」は古い記述だった
 ```
 
 ### 波及して直したもの

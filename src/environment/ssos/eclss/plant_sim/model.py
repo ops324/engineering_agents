@@ -421,7 +421,8 @@ class PlantModel:
         self._check_invariants()
 
         # WRS used to report neither of these, so the scorecard's D axis had nothing
-        # to read for water (STATE-2026-08-27). A rating gives it something to say.
+        # to read for water (docs/ja/memo/experiments/STATE.md). A rating gives it
+        # something to say.
         tol = c.invariant_tolerance
         limited_by: List[str] = []
         if urine_feed < requested_urine_l - tol:
