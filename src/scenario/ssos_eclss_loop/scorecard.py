@@ -511,6 +511,25 @@ def _command_outcomes(events: Sequence[Dict[str, Any]]) -> Dict[str, int]:
     return {"applied": applied, "rejected": rejected}
 
 
+def _effective_config(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """The effective config written beside the run, or None if unreadable."""
+    path = Path(run_dir) / "scenario_config.yaml"
+    if not path.is_file():
+        return None
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+
+
+def _survival_co2_from_config(run_dir: Path) -> Optional[Dict[str, Any]]:
+    """The CO2 dwell table the run ran with, for C's latency anchor."""
+    config = _effective_config(run_dir)
+    if config is None:
+        return None
+    return ((config.get("plant_sim") or {}).get("survival") or {}).get("co2") or {}
+
+
 def _bands_from_config(run_dir: Path) -> Optional[Dict[str, Any]]:
     """The bands the run's own effective config resolves to, or None if absent.
 
@@ -519,12 +538,8 @@ def _bands_from_config(run_dir: Path) -> Optional[Dict[str, Any]]:
     C's rated capacities (:func:`_rated_capacities`) and trajectory_metrics
     opens it for the crew size.
     """
-    path = Path(run_dir) / "scenario_config.yaml"
-    if not path.is_file():
-        return None
-    try:
-        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+    config = _effective_config(run_dir)
+    if config is None:
         return None
     return resolve_survival_bands(config.get("plant_sim"), config.get("thresholds") or {})
 
@@ -700,8 +715,17 @@ def score_run(run_dir: Path, *, habitat: Optional[Habitat] = None) -> Dict[str, 
             parts_not_measurable=b.get("parts_not_measurable"),
         )
         if operations_apply:
+            # C's latency is anchored on the dwell window that kills, so this
+            # divisor must be the window the run actually ran with. It was read
+            # from ``summary["plant_sim"]``, which ``scenario_run`` never writes,
+            # so it fell back to the default 2 on every run ever scored. Every
+            # config under ~/ea-runs says 2, so no published number moves -- but
+            # a run that shortened the window was being graded against a window
+            # it did not have. The effective config is already open in this
+            # module for the bands and for C's own rated capacities.
             dwell_steps = int(
-                ((summary.get("plant_sim") or {}).get("survival") or {}).get("co2", {}).get(
+                (_survival_co2_from_config(run_dir) or {}).get("warning_steps")
+                or ((summary.get("plant_sim") or {}).get("survival") or {}).get("co2", {}).get(
                     "warning_steps", 2
                 )
                 or 2

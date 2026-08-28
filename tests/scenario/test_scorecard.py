@@ -150,3 +150,38 @@ def test_d_does_not_move_on_this_plant(rule_run):
     axis = card["axes"]["D_response"]
     assert axis["points"] == pytest.approx(5.0)
     assert axis["parts"]["delivered_all_it_could"] == axis["parts"]["commands"]
+
+
+def test_c_uses_the_dwell_window_the_run_actually_ran(tmp_path):
+    """C's latency is anchored on the window that kills, so the divisor has to be
+    the run's own.
+
+    It was read from ``summary["plant_sim"]``, which scenario_run never writes,
+    so every run ever scored fell back to the default 2 (EXP-022). Every config
+    under ~/ea-runs says 2, so nothing published moved -- but a run that
+    shortened the window was graded against a window it did not have.
+    """
+    overrides = dict(BASE)
+    overrides["plant_sim"] = {"survival": {"co2": {"warning_steps": 1}}}
+    result = execute_run(
+        RunSpec(scenario="ssos_eclss_loop", overrides=overrides, run_id="tight_window",
+                results_root=tmp_path, seed=101)
+    )
+    assert result.exit_code == 0, result.error
+    run_dir = Path(result.run_dir)
+
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary.get("plant_sim") is None  # still not written; the config is the record
+    assert summary["scoring_bar_modified"] == ["plant_sim.survival.co2"]
+
+    tight = score_run(run_dir)["axes"]["C_judgement"]
+    loose = score_run(
+        Path(
+            execute_run(
+                RunSpec(scenario="ssos_eclss_loop", overrides=BASE, run_id="wide_window",
+                        results_root=tmp_path, seed=101)
+            ).run_dir
+        )
+    )["axes"]["C_judgement"]
+    # Same trajectory, half the window to react in: latency cannot score higher.
+    assert tight["parts"]["latency"] <= loose["parts"]["latency"]
