@@ -323,6 +323,21 @@ def evaluate(
     raise typer.Exit(exit_codes.SUCCESS)
 
 
+def _own_thresholds_are_untouched(run_dir: Path) -> bool:
+    """True when nothing in this run could have moved the bar it is scored against.
+
+    ``--apply-proposals`` writes ``thresholds.*``, and those are the keys health
+    scoring reads, so a run that applied proposals may carry a bar its own
+    proposal moved -- the hole EXP-010 closed. ``apply_proposals_path`` is
+    dropped from summary.json when it is null, so its presence is the signal.
+    """
+    try:
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return summary.get("apply_proposals_path") is None
+
+
 def scorecard(
     run: str = typer.Argument(..., help="Run id under the results root, or a path to a run."),
     results_root: Optional[Path] = typer.Option(
@@ -330,6 +345,15 @@ def scorecard(
     ),
     habitat_volume_m3: Optional[float] = typer.Option(
         None, "--habitat-volume-m3", help="Score CO2 against the standard in this volume."
+    ),
+    yardstick: str = typer.Option(
+        "standard",
+        "--yardstick",
+        help=(
+            "standard = NASA-STD-3001 at the scenario habitat (default). "
+            "run = the run's own thresholds -- what EXP-013..016 published. "
+            "Refused for runs that applied proposals."
+        ),
     ),
     write: bool = typer.Option(False, "--write", help="Write scorecard.json into the run."),
     json_output: bool = typer.Option(False, "--json"),
@@ -340,15 +364,41 @@ def scorecard(
     quantities for A-D without saying what they are worth. Those axes come back
     unscored on purpose: putting a curve here would define the criterion in code
     instead of in the document.
+
+    Two yardsticks give different totals for the same run (82.230 vs 84.35 for the
+    v5 rule arm), and EXP-014 mixed them once. Which one was used is printed, and
+    recorded in the JSON, so a number can never be read without its bar.
     """
+    if yardstick not in ("standard", "run"):
+        raise typer.BadParameter("--yardstick must be 'standard' or 'run'")
+    if yardstick == "run" and habitat_volume_m3 is not None:
+        raise typer.BadParameter(
+            "--yardstick run scores against the run's own thresholds, "
+            "so --habitat-volume-m3 has nothing to act on"
+        )
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    habitat = Habitat(volume_m3=float(habitat_volume_m3)) if habitat_volume_m3 else SCENARIO_HABITAT
+    if yardstick == "run" and not _own_thresholds_are_untouched(run_dir):
+        print_error(
+            "this run applied proposals, so its own thresholds may be thresholds its "
+            "own proposal moved (EXP-010). Score it with --yardstick standard."
+        )
+        raise typer.Exit(exit_codes.USER_ERROR)
+    habitat = (
+        None
+        if yardstick == "run"
+        else (Habitat(volume_m3=float(habitat_volume_m3)) if habitat_volume_m3 else SCENARIO_HABITAT)
+    )
     try:
         card = score_run(run_dir, habitat=habitat)
     except (NotScorable, TelemetryUnreadable) as exc:
         print_error(str(exc))
         raise typer.Exit(NOT_SCORABLE_EXIT) from exc
+    card["yardstick"] = (
+        "run's own thresholds"
+        if yardstick == "run"
+        else f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
+    )
     if write:
         (run_dir / "scorecard.json").write_text(
             json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -359,6 +409,7 @@ def scorecard(
 
     gate = card["physics_gate"]
     typer.echo(f"{card['run_id']}  actor_mode={card['actor_mode']}  gate={gate['verdict']}")
+    typer.echo(f"  yardstick: {card['yardstick']}")
     if not card["scorable"]:
         typer.echo(
             f"  検証無効: {', '.join(gate['failed_checks'])}"

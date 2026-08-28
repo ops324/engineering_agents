@@ -176,3 +176,50 @@ def test_gate_fails_a_corrupt_reading_rather_than_crashing(tmp_path, run_dir):
     result = runner.invoke(app, ["gate", str(run_dir)])
     assert result.exit_code == GATE_FAILED_EXIT
     assert "readings_present_and_finite" in result.output
+
+
+def test_scorecard_names_the_yardstick_it_used(tmp_path, run_dir):
+    """A total is meaningless without its bar. EXP-014 mixed the two once, so the
+    scorecard says which one produced the number it just printed."""
+    result = runner.invoke(app, ["scorecard", str(run_dir)])
+    assert result.exit_code == 0
+    assert "yardstick: NASA-STD-3001 at 388 m3" in result.stdout
+
+
+def test_the_two_yardsticks_give_different_totals(tmp_path, run_dir):
+    """Not a formality: the v5 rule arm is 82.230 against its own thresholds and
+    84.35 against the standard. EXP-013..016 published the former."""
+    standard = runner.invoke(app, ["scorecard", str(run_dir), "--json"])
+    own = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run", "--json"])
+    assert standard.exit_code == 0 and own.exit_code == 0
+    a = json.loads(standard.stdout)
+    b = json.loads(own.stdout)
+    assert a["yardstick"] != b["yardstick"]
+    assert a["axes"]["B_margin"]["points"] != b["axes"]["B_margin"]["points"]
+    assert a["axes"]["actor_remaining"]["points"] == b["axes"]["actor_remaining"]["points"]
+
+
+def test_the_run_s_own_yardstick_is_refused_once_a_proposal_could_have_moved_it(
+    tmp_path, run_dir
+):
+    """The hole EXP-010 closed, reopened by a flag, would be worse than no flag.
+
+    ``--apply-proposals`` writes the four ``thresholds.*`` keys that health
+    scoring reads, so for such a run "its own thresholds" may be thresholds its
+    own proposal moved. The standard yardstick stays available.
+    """
+    summary_path = run_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["apply_proposals_path"] = "design_proposals.json"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    refused = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
+    assert refused.exit_code == 2
+    assert runner.invoke(app, ["scorecard", str(run_dir)]).exit_code == 0
+
+
+def test_the_run_s_own_yardstick_takes_no_habitat(tmp_path, run_dir):
+    result = runner.invoke(
+        app, ["scorecard", str(run_dir), "--yardstick", "run", "--habitat-volume-m3", "388"]
+    )
+    assert result.exit_code != 0

@@ -44,6 +44,30 @@ score_run(dir, habitat=None)                  → 82.230（公表値）
 **再現できない見出し数字は、記録として弱い。** telemetry を捨てなかったのと同じ理由で、
 物差しも道具の側に固定する。→ `~/ea-runs/analysis-tools/compare.py`（下記）。
 
+### 追記 — CLI に `--yardstick` を足した（ガード付き）
+
+```bash
+ea scorecard <run>                      # standard（既定・従来どおり）
+ea scorecard <run> --yardstick run      # run 自身の閾値（EXP-013〜016 の公表値）
+```
+
+**無条件には足していない。** `_build_yardstick` の実装コメントが理由を書いている:
+
+> Scoring a run against thresholds read out of that same run is the one thing this
+> must not do: `--apply-proposals` can write four `thresholds.*` keys and those are
+> the keys health scoring reads, so a run's own bar may be a bar its own proposal moved.
+
+これは **EXP-010 で塞いだ穴そのもの**である。フラグでそれを開け直すのは元より悪い。
+そこで **`apply_proposals_path` を持つ run では `--yardstick run` を拒否する**
+（`_omit_nulls` により、提案を適用した run にだけこのキーが残る）。
+
+さらに**どちらの物差しを使ったかを毎回出力し、JSON にも入れる**。
+沈黙していたことが EXP-014 の取り違えを生んだので、数字を物差し抜きで読めなくする。
+
+テスト4件で固定（`tests/tools/test_cli_score.py`）:
+物差しを名乗ること／二つの物差しが実際に違う総点を出すこと／
+提案を適用した run では拒否すること／`--yardstick run` は `--habitat-volume-m3` を取らないこと。
+
 ### 検算 — 3世代すべての公表値を再現した
 
 ```
