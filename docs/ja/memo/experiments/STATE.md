@@ -159,6 +159,8 @@ run データ      ~/ea-runs/ の7ディレクトリ（54 MB、telemetry 全文�
                 **run データは git 管理外で、消えたら再現不可（seed 固定でも LLM は再現しない）。**
                 Time Machine は未設定（専用ディスクを用意して設定する方針・2026-08-28 時点）
                 → **GPU を長時間回したあとは必ず走らせる**
+                取得時に3つ警告する: 未コミットの変更／対応表 README の欠落／
+                dirty な run（`code_version.dirty`）。どれも実際に2回やった失敗
 解析ツール      ~/ea-runs/analysis-tools/
                 tstat.py = Welch の t 検定（scipy が無いので自前実装、既知値で検算済み）
                 各実験のバッチスクリプト（sweep / noise / temperature / llm-vs-rule）
