@@ -23,6 +23,7 @@ from scenario.ssos_eclss_loop.design_proposals import (
     DESIGN_DOMAIN,
     SSOS_CHANGE_KINDS,
     build_design_proposals_from_run,
+    explain_ssos_proposal_change,
     validate_ssos_proposal_change,
 )
 
@@ -205,7 +206,8 @@ class PostRunDesignAgent:
             ]
             return fallback
 
-        changes, parse_notes = parse_llm_design_proposals(parsed.data.get("changes", []))
+        raw_changes = parsed.data.get("changes", [])
+        changes, parse_notes, rejected = parse_llm_design_proposals_detailed(raw_changes)
         return {
             "design_domain": DESIGN_DOMAIN,
             "proposed_by": rep,
@@ -213,6 +215,10 @@ class PostRunDesignAgent:
             "message": str(parsed.data.get("message", "")),
             "reasoning": str(parsed.data.get("reasoning", "")),
             "changes": changes,
+            # What the model emitted, and why each refusal happened. Without
+            # these a rejection rate cannot be diagnosed, only quoted (EXP-026).
+            "changes_emitted": len(raw_changes) if isinstance(raw_changes, list) else None,
+            "changes_rejected": rejected,
             "baseline_graph": baseline_graph,
             "parse_status": parsed.status,
             "parse_error": parsed.error,
@@ -266,26 +272,54 @@ class PostRunDesignAgent:
 
 def parse_llm_design_proposals(raw_changes: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Accept every valid change. One representative may emit any count."""
+    accepted, notes, _ = parse_llm_design_proposals_detailed(raw_changes)
+    return accepted, notes
+
+
+def parse_llm_design_proposals_detailed(
+    raw_changes: Any,
+) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+    """As :func:`parse_llm_design_proposals`, and keep what was refused.
+
+    A refusal used to leave one note -- ``invalid payload for set_parameter``,
+    identical whether the target did not exist or the value was not a number --
+    and the payload itself was dropped. An audit (2026-08-29, EXP-026) met a run
+    that discarded 11 of 14 changes and could reconstruct only two of them,
+    because the raw response had already been cut to 240 characters at each end.
+
+    Measuring a rejection rate while being unable to say what was rejected is
+    the designer-layer version of what EXP-008 recorded: 861 runs that can never
+    be re-scored because the telemetry is gone.
+    """
     if not isinstance(raw_changes, list):
-        return [], ["changes is not a list"]
+        return [], ["changes is not a list"], []
     accepted: List[Dict[str, Any]] = []
     notes: List[str] = []
+    rejected: List[Dict[str, Any]] = []
+
+    def refuse(change_kind: str, payload: Any, reason: str) -> None:
+        notes.append(reason)
+        rejected.append({"change_kind": change_kind, "payload": payload, "reason": reason})
+
     for item in raw_changes:
         if not isinstance(item, dict):
-            notes.append("change item is not an object")
+            refuse("", item, "change item is not an object")
             continue
         change_kind = str(item.get("change_kind", "")).strip()
         payload = item.get("payload", {})
         if not isinstance(payload, dict):
             payload = {}
         if change_kind not in SSOS_CHANGE_KINDS:
-            notes.append(f"unsupported change_kind: {change_kind}")
+            refuse(change_kind, payload, f"unsupported change_kind: {change_kind}")
             continue
-        if validate_ssos_proposal_change(change_kind, payload) is None:
-            notes.append(f"invalid payload for {change_kind}")
+        why = explain_ssos_proposal_change(change_kind, payload)
+        if why is not None:
+            # The note keeps its old prefix so existing readers still match, and
+            # gains the reason after it.
+            refuse(change_kind, payload, f"invalid payload for {change_kind}: {why}")
             continue
         accepted.append({"change_kind": change_kind, "payload": payload})
-    return accepted, notes
+    return accepted, notes, rejected
 
 
 def build_llm_post_run_situation(bundle: DesignReviewBundle) -> str:
@@ -308,6 +342,17 @@ def build_llm_post_run_situation(bundle: DesignReviewBundle) -> str:
         f"initial_o2_storage_kg={sim.get('initial_o2_storage_kg')}, "
         f"initial_product_water_l={sim.get('initial_product_water_l')}"
     )
+    # The occupants. Absent until 2026-08-29: the designer was shown gas masses,
+    # command counts and health strings, and never told that anyone was aboard or
+    # that anyone had died -- while the measure it is judged on is whether its
+    # proposal saves a crew member (EXP-026). Stating the outcome is telling the
+    # model what the run was for; it is not telling it which parameter to move.
+    crew = (
+        f"crew_initial={summary.get('crew_initial')}, "
+        f"crew_remaining={summary.get('crew_remaining')}, "
+        f"crew_lost={summary.get('crew_lost')}, "
+        f"crew_lost_by_cause={json.dumps(summary.get('crew_lost_by_cause') or {}, ensure_ascii=False)}"
+    )
     # Thresholds are supervision stubs for context — not a pass/fail verdict.
     req_stubs = json.dumps(thresholds, ensure_ascii=False)
     final_health = json.dumps(summary.get("final_health") or {}, ensure_ascii=False)
@@ -323,6 +368,7 @@ def build_llm_post_run_situation(bundle: DesignReviewBundle) -> str:
         "One representative emits changes; include as many proposals as needed "
         "(no count cap).\n\n"
         f"### Initial conditions\n{initials}\n\n"
+        f"### Occupants\n{crew}\n\n"
         f"### Verification requirement stubs (context only)\n{req_stubs}\n\n"
         f"### Telemetry\n{telemetry_summary}\n\n"
         f"### World state\n{final_health}\n\n"

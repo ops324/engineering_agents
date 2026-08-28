@@ -791,3 +791,51 @@ def test_acting_early_does_not_touch_the_verification_band():
     assert "air_revitalisation" in commands_at(1.5)
     # With a 0.5 kg margin the same reading fires, band untouched.
     assert "air_revitalisation" in commands_at(1.2, margin=0.5)
+
+
+def test_a_refusal_says_why_and_keeps_what_was_refused():
+    """One note per refusal used to read `invalid payload for set_parameter`,
+    identical for a target that does not exist and a value that is not a number,
+    and the payload went in the bin.
+
+    An audit (2026-08-29, EXP-026) met a run that discarded 11 of 14 changes and
+    could reconstruct two, the raw response having been cut to 240 characters at
+    each end.
+    """
+    from scenario.agents.ssos_post_run_design import parse_llm_design_proposals_detailed
+
+    accepted, notes, rejected = parse_llm_design_proposals_detailed(
+        [
+            {"change_kind": "set_parameter",
+             "payload": {"target": "eclss.o2.hysteresis_kg", "value": 0.05}},
+            {"change_kind": "set_parameter",
+             "payload": {"target": "thresholds.co2_storage_high_kg", "value": "low"}},
+            {"change_kind": "set_parameter",
+             "payload": {"target": "thresholds.co2_storage_high_kg", "value": 1.8}},
+        ]
+    )
+    assert len(accepted) == 1
+    assert len(rejected) == 2
+    # The two refusals are told apart, which is the whole point.
+    assert "is not allowed" in rejected[0]["reason"]
+    assert "must be a number" in rejected[1]["reason"]
+    # And the payloads survive, so the run can be diagnosed later.
+    assert rejected[0]["payload"]["target"] == "eclss.o2.hysteresis_kg"
+    assert rejected[1]["payload"]["value"] == "low"
+    # The old prefix is intact for readers that match on it.
+    assert all(n.startswith("invalid payload for set_parameter") for n in notes)
+
+
+def test_the_only_lever_that_moves_anything_checks_its_value():
+    """action_profile and service_config have checked their numbers since they
+    were written; set_parameter never did, and it is the only change kind that
+    moves plant_sim. An audit (EXP-026) scored True, -5.0 and 0.0 in a CO2 alarm
+    as saving an occupant, and "low"/None passed parse and then crashed the
+    treated arm mid-run, dropping it from the sample."""
+    from scenario.ssos_eclss_loop.design_proposals import explain_ssos_proposal_change
+
+    target = "thresholds.co2_storage_high_kg"
+    for bad in (True, "low", None, float("inf"), float("nan"), -5.0):
+        assert explain_ssos_proposal_change("set_parameter", {"target": target, "value": bad})
+    for good in (0.0, 1.8, 2):
+        assert explain_ssos_proposal_change("set_parameter", {"target": target, "value": good}) is None

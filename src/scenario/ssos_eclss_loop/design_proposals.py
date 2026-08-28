@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -192,6 +193,24 @@ def _apply_set_parameter(config: Dict[str, Any], payload: Dict[str, Any]) -> Non
         raise ValueError(
             f"set_parameter.target {target!r} is not allowed. Allowed targets: {allowed}"
         )
+    # Every allowed target is a threshold or a policy band, in kg or litres.
+    # ``action_profile`` and ``service_config`` have checked their numbers since
+    # they were written; this one never did, and it is the only change kind that
+    # moves anything on plant_sim. An audit (2026-08-29, EXP-026) put ``True``,
+    # ``-5.0`` and ``0.0`` into a CO2 alarm through here and each scored as
+    # saving an occupant, while ``"low"`` and ``None`` passed parse and then
+    # crashed the treated arm mid-run -- which drops that run out of the sample
+    # instead of failing it where someone would see it.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(
+            f"set_parameter.value for {target!r} must be a number, got {value!r}"
+        )
+    if not math.isfinite(float(value)):
+        raise ValueError(f"set_parameter.value for {target!r} must be finite")
+    if float(value) < 0.0:
+        raise ValueError(
+            f"set_parameter.value for {target!r} must not be negative, got {value!r}"
+        )
 
     _write_dotted_target(config, target, value)
     alias = _POLICY_FIELD_ALIASES.get(target)
@@ -227,14 +246,30 @@ def validate_ssos_proposal_change(
     Parse and ``--apply-proposals`` share this gate so invalid LLM changes
     never land in ``design_proposals.json``.
     """
+    return None if explain_ssos_proposal_change(change_kind, payload) else payload
+
+
+def explain_ssos_proposal_change(
+    change_kind: str,
+    payload: Dict[str, Any],
+) -> Optional[str]:
+    """Why apply would refuse *payload*, or None when it would accept it.
+
+    The reason used to be thrown away: ``parse_llm_design_proposals`` caught the
+    exception and wrote ``invalid payload for set_parameter``, identical for a
+    target that does not exist and a value that is not a number. An audit
+    (2026-08-29, EXP-026) could not tell those apart in a run that discarded 11
+    of 14 changes, and the raw response that would have settled it had already
+    been cut to 240 characters at each end.
+    """
     handler = _APPLY_HANDLERS.get(change_kind)
     if handler is None:
-        return None
+        return f"unsupported change_kind: {change_kind}"
     try:
         handler({}, payload)
-    except (TypeError, ValueError):
-        return None
-    return payload
+    except (TypeError, ValueError) as exc:
+        return str(exc) or f"{type(exc).__name__} with no message"
+    return None
 
 
 def apply_design_proposals(

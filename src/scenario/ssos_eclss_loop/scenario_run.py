@@ -768,7 +768,18 @@ class SsosEclssLoopScenario(Scenario):
                     log.append("messages", msg)
                     message_count += 1
             summary["message_count"] = message_count
-            if change_count > 0:
+            # L8/B still holds -- a designer that proposed nothing writes no
+            # document, so --apply-proposals never no-ops from an empty one.
+            # "Proposed nothing" and "proposed things that were all refused" are
+            # different runs, and the gate on ``change_count`` alone could not
+            # tell them apart: a run whose every change was rejected left no
+            # file, no payloads, no reasons. That drops exactly the runs a
+            # rejection rate is about out of the sample it is measured on, and
+            # drops them from ``ea evaluate`` as well (EXP-026).
+            rejected_count = len(proposals.get("changes_rejected") or [])
+            note_count = len(proposals.get("parse_notes") or [])
+            summary["design_proposal_rejected_count"] = rejected_count
+            if change_count > 0 or rejected_count or note_count:
                 proposals_path = run_dir / "design_proposals.json"
                 write_design_proposals(proposals_path, proposals)
                 summary["design_proposals_path"] = str(proposals_path)

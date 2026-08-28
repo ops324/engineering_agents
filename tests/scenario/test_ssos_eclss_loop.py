@@ -919,3 +919,51 @@ def test_o2_still_kills_below_the_mild_hypoxia_floor(tmp_path: Path):
     assert crew_left(95.0) == 4, "above the mild hypoxia floor, nobody is taken"
     assert crew_left(91.0) < 4, "below 91.31 kg the [V2 6003] floor takes people"
     assert crew_left(87.0) == 0, "below the 122 mmHg absolute floor, nobody survives"
+
+
+def test_a_run_whose_changes_were_all_refused_still_leaves_the_record(tmp_path: Path, monkeypatch):
+    """L8/B skips a designer that proposed nothing. A designer whose every
+    proposal was refused is a different run, and it is the one a rejection rate
+    is about.
+
+    An audit (2026-08-29, EXP-026) found that gate removed those runs from the
+    sample the rate is measured on -- biasing it downward -- and from ea evaluate
+    with them. The payloads and the reasons now survive.
+    """
+    from scenario.agents.ssos_post_run_design import PostRunDesignAgent
+
+    monkeypatch.setattr(
+        PostRunDesignAgent,
+        "propose",
+        lambda self, bundle: {
+            "design_domain": "ssos_graph",
+            "proposed_by": "eclss_designer_1",
+            "decision_source": "llm",
+            "message": "",
+            "changes": [],
+            "changes_emitted": 2,
+            "changes_rejected": [
+                {
+                    "change_kind": "set_parameter",
+                    "payload": {"target": "eclss.o2.hysteresis_kg", "value": 0.05},
+                    "reason": "set_parameter.target 'eclss.o2.hysteresis_kg' is not allowed",
+                }
+            ],
+            "parse_notes": ["invalid payload for set_parameter: not allowed"],
+        },
+    )
+    run_dir = run_scenario(
+        "ssos_eclss_loop",
+        output_dir=tmp_path / "all_refused",
+        overrides=_ssos_agents("labeled_rule_base"),
+        recreate_output=True,
+    )
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["design_proposal_count"] == 0
+    assert summary["design_proposal_rejected_count"] == 1
+    assert (run_dir / "design_proposals.json").exists()
+
+    written = json.loads((run_dir / "design_proposals.json").read_text(encoding="utf-8"))
+    refused = written["changes_rejected"][0]
+    assert refused["payload"]["target"] == "eclss.o2.hysteresis_kg"
+    assert "not allowed" in refused["reason"]
