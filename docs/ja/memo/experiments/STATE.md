@@ -10,7 +10,7 @@
 ## ブランチ
 
 ```
-experiment/eclss-evaluation-layer   （origin に push 済み、39コミット）
+experiment/eclss-evaluation-layer   （土台から73コミット。**うち直近9本は origin 未 push** — 2026-08-29 実測）
   土台: d5616389（#58）。**upstream/trunk は c7f3d89（#59）に進んでいて未取り込み**
         → #59 はルール腕を「1 step に ceil(不足/効果) 回」に変えたが、この枝の定格の
           不変条件が同一 step の合算を1回分で止めるので**効果ゼロ**（EXP-016 の確認と同じ根拠）。
@@ -76,7 +76,8 @@ R3  採点式に根拠を与える                   調査済み・**チーム�
     → R3-scorecard-weights.md。重みは出典から引けないと判明（価値判断であって測定値でない）
 R4  リーク＋対処手段                       ⏸ 将来フェーズ
 R5  測定 v5                               ✅ 完了（EXP-015）
-R6  ハイブリッド腕（Flow Engineering 型）  ← **次。設計入力も物差しも揃った**
+R6  ハイブリッド腕（Flow Engineering 型）  ⏸ 判断点が全て退化（EXP-017）。先に「置く場所を作る」
+```
 
 **⚠ EXP-016 の結論は撤回した（独立監査3体・全件再現して確認）。**
 
@@ -85,9 +86,11 @@ R6  ハイブリッド腕（Flow Engineering 型）  ← **次。設計入力も
 - **C は判断の質を測っている証拠が無い**（発行指令数と r=−0.629、no-op と軌道が同一の3本に 0.00〜2.72 の差、
   5点中1点はスキーマ適合度、過小要求は常に満点）
 
-**行き先は分かった。本当の余地は B 軸の CO₂ 側に 7.76点**（co2_worst 0/4・co2_terminal 0.24/4、
+**行き先は分かった。余地は B 軸の CO₂ 側にある**（co2_worst 0/4・co2_terminal 0.24/4、
 ピーク 2.05 kg が帯 2.0 を超えている）。**規格に紐づき、「いつ撃つ・いつ止める」で動く。**
-R6 設計は第2版に差し替えた → [r6_hybrid_arm_design.md](../ssos_eclss_loop/r6_hybrid_arm_design.md)
+**ただし到達可能なのは 3.03点**（0.238 → 3.263）。7.76 は満点までの差であって余地ではない — 下の EXP-017。
+R6 設計は第2版に差し替えたが、**その第2版も EXP-017 で退化した** →
+[r6_hybrid_arm_design.md](../ssos_eclss_loop/r6_hybrid_arm_design.md)
 
 **そして判断点 f も退化していた（EXP-017・実装前の掃引で判明・GPU 0秒）:**
 
@@ -104,8 +107,6 @@ O₂・水は窓内で帯に届かない
 「LLM は no-op と区別できない」に別の説明を与える — **決めることがほとんど無い。**
 
 → **次は「AI をどこに置くか」ではなく「置く場所を作る」**（EXP-017 の4案・判断待ち）
-R5  v5 を一度だけ測る                      3.5時間・ここ1回だけ
-```
 
 **無料のものを先に、高いものを後に、測定は最後に1回。**
 
@@ -198,7 +199,7 @@ run データ      ~/ea-runs/ の7ディレクトリ（54 MB、telemetry 全文�
                   公表値は `run 自身の閾値`＝`score_run(dir, habitat=None)`。**`ea scorecard` では出せない**
                   決定的な腕は n=1 なので Welch ではなく1標本 t 検定
                 各実験のバッチスクリプト（sweep / noise / temperature / llm-vs-rule）
-経緯            この repo の 40コミット + EXP-000〜013
+経緯            この repo の 73コミット + EXP-000〜017
 会話ログ        ~/.claude/projects/-Users-takimototetsuya-Coup-de-Burst-/*.jsonl
 次回プロンプト   ~/ea-runs/next-session-prompt.md
 ```
