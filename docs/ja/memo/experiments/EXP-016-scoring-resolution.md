@@ -58,15 +58,33 @@ ea scorecard <run> --yardstick run      # run 自身の閾値（EXP-013〜016 �
 > the keys health scoring reads, so a run's own bar may be a bar its own proposal moved.
 
 これは **EXP-010 で塞いだ穴そのもの**である。フラグでそれを開け直すのは元より悪い。
-そこで **`apply_proposals_path` を持つ run では `--yardstick run` を拒否する**
-（`_omit_nulls` により、提案を適用した run にだけこのキーが残る）。
+**最初のガードは不完全だった（同セッション内で自分で見つけて直した）。**
+`apply_proposals_path` の有無で判定したが、`--set thresholds.co2_storage_high_kg=99.0` は
+同じ4キーを書き換えたうえで **`apply_proposals_path` を残さない**。実際に走らせて確認した:
+閾値 99 kg（＝警報帯に一度も入らない）の run が、記録上は「提案なし」に見えた。
+
+そこで **run 実行時に `thresholds_modified` を記録する**ことにした。
+scenario.yaml の既定と実効値を実行時点で比べるので、`--set` も `--override-file` も
+`--apply-proposals` も一様に捕まる。**後から今の scenario.yaml と比べるのでは駄目**で、
+それだと世代が変わるたびに過去の run が丸ごと不合格になる（v4 の O₂ 閾値は 6.0、v5 は 104.25）。
+
+```
+thresholds_modified = true   → --yardstick run を拒否
+thresholds_modified = false  → 許可
+キーが無い（v3〜v5）         → 許可するが「unverified」と明示して出す
+```
+
+最後の1つは妥協である。過去 run は自分の閾値が動かされたかを言えない。
+**拒否すれば公表値が再現できなくなり、黙って通せば無かった検査をあったことにする。**
+出力に `(predates thresholds_modified -- unverified)` と出す。
 
 さらに**どちらの物差しを使ったかを毎回出力し、JSON にも入れる**。
 沈黙していたことが EXP-014 の取り違えを生んだので、数字を物差し抜きで読めなくする。
 
-テスト4件で固定（`tests/tools/test_cli_score.py`）:
-物差しを名乗ること／二つの物差しが実際に違う総点を出すこと／
-提案を適用した run では拒否すること／`--yardstick run` は `--habitat-volume-m3` を取らないこと。
+テスト6件で固定（`tests/tools/test_cli_score.py`）:
+物差しを名乗ること／二つの物差しが実際に違う総点を出すこと／正規の run は verified で通ること／
+**`--set` で閾値を動かした run は拒否すること**／記録前の世代は unverified と出ること／
+`--yardstick run` は `--habitat-volume-m3` を取らないこと。
 
 ### 検算 — 3世代すべての公表値を再現した
 

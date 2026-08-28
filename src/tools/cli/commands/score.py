@@ -323,19 +323,27 @@ def evaluate(
     raise typer.Exit(exit_codes.SUCCESS)
 
 
-def _own_thresholds_are_untouched(run_dir: Path) -> bool:
-    """True when nothing in this run could have moved the bar it is scored against.
+def _own_thresholds_are_untouched(run_dir: Path) -> Optional[bool]:
+    """Did anything move the bar this run would be scored against?
 
-    ``--apply-proposals`` writes ``thresholds.*``, and those are the keys health
-    scoring reads, so a run that applied proposals may carry a bar its own
-    proposal moved -- the hole EXP-010 closed. ``apply_proposals_path`` is
-    dropped from summary.json when it is null, so its presence is the signal.
+    True = nothing did, False = something did, None = the run is too old to say.
+
+    ``--apply-proposals`` writes the four ``thresholds.*`` keys that health
+    scoring reads, so such a run's own bar may be a bar its own proposal moved --
+    the hole EXP-010 closed. But ``--set thresholds.co2_storage_high_kg=99`` does
+    the same thing and leaves no ``apply_proposals_path`` behind, so that signal
+    alone is not enough. Runs written after this landed record
+    ``thresholds_modified``, decided against scenario.yaml at run time; older
+    runs get the weaker check and are told it is weaker.
     """
     try:
         summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    return summary.get("apply_proposals_path") is None
+    modified = summary.get("thresholds_modified")
+    if modified is not None:
+        return not bool(modified)
+    return None if summary.get("apply_proposals_path") is None else False
 
 
 def scorecard(
@@ -378,12 +386,16 @@ def scorecard(
         )
     root = Path(results_root) if results_root else default_results_root()
     run_dir = _resolve_run(run, root)
-    if yardstick == "run" and not _own_thresholds_are_untouched(run_dir):
-        print_error(
-            "this run applied proposals, so its own thresholds may be thresholds its "
-            "own proposal moved (EXP-010). Score it with --yardstick standard."
-        )
-        raise typer.Exit(exit_codes.USER_ERROR)
+    untouched: Optional[bool] = None
+    if yardstick == "run":
+        untouched = _own_thresholds_are_untouched(run_dir)
+        if untouched is False:
+            print_error(
+                "this run's thresholds were moved after scenario.yaml, so its own "
+                "thresholds may be a bar it set for itself (EXP-010). "
+                "Score it with --yardstick standard."
+            )
+            raise typer.Exit(exit_codes.USER_ERROR)
     habitat = (
         None
         if yardstick == "run"
@@ -394,11 +406,12 @@ def scorecard(
     except (NotScorable, TelemetryUnreadable) as exc:
         print_error(str(exc))
         raise typer.Exit(NOT_SCORABLE_EXIT) from exc
-    card["yardstick"] = (
-        "run's own thresholds"
-        if yardstick == "run"
-        else f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
-    )
+    if yardstick == "run":
+        card["yardstick"] = "run's own thresholds"
+        if untouched is None:
+            card["yardstick"] += " (predates thresholds_modified -- unverified)"
+    else:
+        card["yardstick"] = f"NASA-STD-3001 at {habitat.volume_m3:g} m3"
     if write:
         (run_dir / "scorecard.json").write_text(
             json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8"

@@ -367,6 +367,13 @@ class SsosEclssLoopScenario(Scenario):
             config = apply_design_proposals(config, proposals)
             applied_proposals_path = Path(apply_proposals_path)
         thresholds = config.get("thresholds", {}) or {}
+        # Whether anything moved the bar this run will be scored against, by any
+        # route: --set thresholds.*, --override-file, or --apply-proposals. Only
+        # the run itself can tell -- scenario.yaml keeps changing, so comparing
+        # an old run against today's defaults would flag whole generations. The
+        # run's own thresholds are only a trustworthy yardstick when this is
+        # false (EXP-010, EXP-016).
+        thresholds_modified = thresholds != (self.load_config(None).get("thresholds", {}) or {})
         agents_config = load_agents_config(self.name, config)
         if agents_config:
             agents_config = merge_labeled_policy_from_thresholds(agents_config, thresholds)
@@ -559,6 +566,7 @@ class SsosEclssLoopScenario(Scenario):
             "message_count": message_count,
             "operational_command_count": operational_command_count,
             "thresholds": build_effective_thresholds(thresholds),
+            "thresholds_modified": thresholds_modified,
             # What attrition actually read. Equal to thresholds unless the
             # config names bands, and worth carrying either way: a run that
             # reports occupant losses should say which edges took them.

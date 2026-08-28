@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -199,23 +200,48 @@ def test_the_two_yardsticks_give_different_totals(tmp_path, run_dir):
     assert a["axes"]["actor_remaining"]["points"] == b["axes"]["actor_remaining"]["points"]
 
 
-def test_the_run_s_own_yardstick_is_refused_once_a_proposal_could_have_moved_it(
-    tmp_path, run_dir
-):
+def test_a_clean_run_records_that_nothing_moved_its_bar(tmp_path, run_dir):
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["thresholds_modified"] is False
+    result = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
+    assert result.exit_code == 0
+    assert "unverified" not in result.stdout
+
+
+def test_the_run_s_own_yardstick_is_refused_once_anything_moved_it(tmp_path):
     """The hole EXP-010 closed, reopened by a flag, would be worse than no flag.
 
-    ``--apply-proposals`` writes the four ``thresholds.*`` keys that health
-    scoring reads, so for such a run "its own thresholds" may be thresholds its
-    own proposal moved. The standard yardstick stays available.
+    --set writes the same four thresholds.* keys --apply-proposals does, and
+    leaves no apply_proposals_path behind, so the check has to be on the
+    thresholds themselves. The standard yardstick stays available.
     """
+    overrides = dict(OVERRIDES)
+    overrides["thresholds"] = {"co2_storage_high_kg": 99.0}
+    result = execute_run(
+        RunSpec(scenario="ssos_eclss_loop", overrides=overrides, run_id="moved",
+                results_root=tmp_path, seed=101)
+    )
+    assert result.exit_code == 0, result.error
+    moved = Path(result.run_dir)
+    assert json.loads((moved / "summary.json").read_text(encoding="utf-8"))["thresholds_modified"]
+
+    refused = runner.invoke(app, ["scorecard", str(moved), "--yardstick", "run"])
+    assert refused.exit_code == 2
+    assert runner.invoke(app, ["scorecard", str(moved)]).exit_code == 0
+
+
+def test_a_run_predating_the_record_is_scored_but_marked_unverified(tmp_path, run_dir):
+    """v3-v5 runs cannot say whether their bar was moved. Say so rather than
+    either refusing them (the published numbers stop being reproducible) or
+    implying a check that did not happen."""
     summary_path = run_dir / "summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    summary["apply_proposals_path"] = "design_proposals.json"
+    del summary["thresholds_modified"]
     summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
-    refused = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
-    assert refused.exit_code == 2
-    assert runner.invoke(app, ["scorecard", str(run_dir)]).exit_code == 0
+    result = runner.invoke(app, ["scorecard", str(run_dir), "--yardstick", "run"])
+    assert result.exit_code == 0
+    assert "unverified" in result.stdout
 
 
 def test_the_run_s_own_yardstick_takes_no_habitat(tmp_path, run_dir):
