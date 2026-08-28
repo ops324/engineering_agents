@@ -181,6 +181,57 @@ end14 の値を掃引:  1.80以下は全て救出 / 1.85以上は全て救出せ
 
 ---
 
+---
+
+# 第4部 — 新しい主指標「有効提案率」と、その基準線（実測・GPU 0秒）
+
+`~/ea-runs/analysis-tools/effective_rate.py` を作った。**各提案を単独で適用し、
+`ea evaluate` の9指標のどれかが動くかを見る。** 検証器が通したかどうかは見ない。
+
+## probe（LLM designer・n=1）
+
+```
+emitted 14  accepted 3  effective 0  → **0.0%**
+  graph_rewire   → nothing
+  service_config → nothing
+  service_config → nothing
+```
+
+**棄却率なら「21% 成功」と読めたものが、0.0% である。**
+
+## ルール designer の基準線（71本・評価可能なもの全部）
+
+```
+emitted 309  effective 55  → **17.8%**（49本は再実行できないので除外）
+
+change_kind 別   action_profile   0/125 (0.0%)
+                 service_config   0/ 65 (0.0%)
+                 set_parameter   55/119 (46.2%)
+
+target 別        agents.actor.policy.co2_storage_high_kg   **0/59 有効**
+                 thresholds.co2_storage_high_kg           55/60 有効（92%）
+
+乗員を動かした提案 10件
+```
+
+**⇒ EXP-024 の「action_profile 125件・service_config 65件は無効」は外挿だったが、
+190件の実測で確認された。** 監査が指摘した「`agents.*.policy.*` は
+`merge_labeled_policy_from_thresholds` に上書きされて死んでいる」も **59/59 で無効**と実測。
+
+**ルールの designer は、出したものの 82% が何もしない。** 効くのは
+`thresholds.co2_storage_high_kg` だけで、それは出せば 92% の確率で効く。
+
+## ★ この測定で、自分の道具のバグを1つ見つけた
+
+初版は「評価不能」と「効果なし」を混ぜていた。2026-08-25 世代の49本は
+乗員50・actor4 で不変条件に反するため**再実行できない**のに、その245件を
+「効果なし」と数え、**9.9% と報告するところだった**（正しくは 17.8%）。
+
+**部分集合と全体を取り違える、EXP-022 の `llm_r20`・EXP-024 の水の平均と同じ型である。**
+今回は報告する前に自分で気づいた。道具に「まず再実行できるか確かめ、できなければ集計から外す」を入れた。
+
+---
+
 ## 教訓
 
 **EXP-023 の教訓（検定は現状にも全集合にも当てる）は守った。** 基準線も置いた。

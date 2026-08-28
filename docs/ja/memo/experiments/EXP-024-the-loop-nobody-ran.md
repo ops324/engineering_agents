@@ -106,6 +106,11 @@ thresholds.* を含まない  n=11  → **no_effect 11 / 11**                  �
 **`thresholds.co2_storage_high_kg` を下げること以外、何一つ効いていない。**
 `action_profile`（125件）と `service_config`（65件）は**全て無効**である。
 
+> **⚠ この段落は当初、単独検証した 11件・9件からの外挿だった**（監査の指摘・EXP-026）。
+> **その後 190件すべてを単独で適用して実測し、0/125・0/65 を確認した。**
+> 併せて `agents.actor.policy.co2_storage_high_kg` も **0/59 で無効**（上書きされる）。
+> **ルール designer の有効提案率は 309件中 55件＝17.8%。** → [EXP-026 第4部](EXP-026-the-metric-a-constant-string-wins.md)
+
 これは [EXP-018](EXP-018-scarcity-without-value.md) の「指令の54%は0点」と同じ形が、
 **actor の層ではなく designer の層で再現したもの**である。
 
