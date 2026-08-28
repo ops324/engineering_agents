@@ -175,20 +175,42 @@ run が 3000 を名乗り採点者が何も指定しなければ、今日フラ�
 
 ---
 
-# 第3部 — 塞いだもの（この EXP のコミット）
+# 第3部 — 塞いだもの
 
 ```
-破れ6  simulation.steps を _OPERATING_POINT_IGNORED から外した
-       → --steps 2 の run は operating_point_modified に simulation.steps を載せ、⚠ を印字する
-       → 公表 run は全て --steps 50 で scenario.yaml も 50。**誤検知ゼロ**
-破れ7  _habitat_for() を新設し、容積の構築経路4箇所を1つに集約
-       → 正の有限値でなければ BadParameter。0 が黙って 388 に戻る falsy 判定も消えた
-破れ8  scorecard が scoring_bar_modified を両方の物差しで印字する
-       → standard では拒否しないが「run 自身が引いた線が残っている」と表示する
+944bbe0
+破れ6  ✅ simulation.steps を _OPERATING_POINT_IGNORED から外した
+          → --steps 2 の run は ⚠ を印字する。公表 run は全て --steps 50 なので誤検知ゼロ
+破れ7  ✅ _habitat_for() を新設し、容積の構築経路4箇所を1つに集約
+          → 正の有限値でなければ BadParameter。0 が黙って 388 に戻る falsy 判定も消えた
+破れ8  ✅ scorecard が scoring_bar_modified を両方の物差しで印字する
+
+5224396
+破れ5  ✅ 帯を scenario_config.yaml と照合する
+          → 不一致なら NotScorable で拒否（どちらが真か決められないので選ばない）
+          → ~/ea-runs の 168本は全て一致。532本は照合材料が無く bands_verified: null
+          → 監査官が偽造したコピー（survival_bands だけ書き換え）は実際に拒否された
+公表世代 ✅「predates scoring_bar_modified -- unverified」を両方の物差しに出す
+          → これまで run 分岐の中だけで、既定の standard が唯一「未検証が検証済みに見える」場所だった
+陳腐化   ✅ R2 以降 偽だった記述を5箇所。scenario.yaml の 88.31 → 87.71 も訂正
+
+0d17616
+破れ9  ✅ scenario.yaml に plant_sim.habitat.volume_m3: 388.0 を新設し、**拒否側**に置いた
+          → _scoring_bar_modified が plant_sim.habitat を差分。_operating_point_modified からは除外
+          → 容積を偽った run は**両方の物差しで採点不能**（standard では帯そのものが変わるため）
+          → 採点は run の申告を既定にする。--habitat-volume-m3 は残すが、カードに
+            「run declares 388 m3 -- overridden」と出て habitat_overridden が JSON に載る
+          → 容積を名乗らない既存 run は SCENARIO_HABITAT（同じ 388）のまま。値は動かない
+
+3be366f
+副産物   ✅ C 軸 latency の分母を scenario_config.yaml から取る
+          → summary["plant_sim"] は書かれないので、これまで全 run が既定値 2 で採点されていた
+          → ~/ea-runs の config は全て 2 なので公表値は不変。窓を縮めた run が
+            持っていない窓で採点されていた点が誤りだった
 ```
 
 **公表値は不変**（v5 ルール腕 82.2297 / no-op 68.6661、`score_run(dir, habitat=None)`）。
-**テスト 623 → 626。** `mkdocs build --strict` 通過。
+**テスト 623 → 631。** `mkdocs build --strict` 通過。**GPU 0秒。**
 
 **契約を書き直したテスト1件**: `test_run_knobs_are_not_read_as_a_changed_operating_point` は
 「steps と seed は run ノブである」という**前提が消えた**ので
@@ -199,13 +221,14 @@ run が 3000 を名乗り採点者が何も指定しなければ、今日フラ�
 ## 未修正で残るもの
 
 ```
-破れ9   容積を run に名乗らせる設計は、置き場所を拒否側に変えたうえで作り直す必要がある
-        併せて ea evaluate 側の --habitat-volume-m3 も同じ扱いが要る
-破れ5   採点は summary.json の survival_bands を無検証で信じる。
-        **同じ採点経路が scenario_config.yaml を既に2箇所で開いている**
-        （scorecard.py:359 の定格、trajectory_metrics.py:355 の乗員数）。照合は無料
-公表26本 scoring_bar_modified / operating_point_modified を1本も持たない（ガード導入前の世代）。
-        既定の standard では「未検証」の注記すら付かない（score.py の注記は run 分岐の中）
+第3案     運用の帯 104.25 をリテラルで plant_sim.survival の内側に置く案が**未決に戻っている**。
+          却下理由（撤回1 の 0.07点）が無効になったため。**採点式の変更なので、着手前に
+          もう一度 原則4 の監査を通すこと**
+公表26本  ガード導入前なので scoring_bar_modified を持たない。両方の物差しで
+          「unverified」と注記されるようになったが、**遡って検証はできない**
+          （帯だけは scenario_config.yaml と照合できるので bands_verified: true にはなる）
+ea evaluate  --habitat-volume-m3 は入力検証を共有するようになったが、
+          run の申告との照合は scorecard 側にしか入っていない
 ```
 
 ## 陳腐化した記述（R2 以降 偽・未修正）
