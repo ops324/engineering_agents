@@ -47,6 +47,9 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-011](EXP-011-noise-floor-v3.md) | ノイズ床の測り直し（v3） | confirmed（予測5件中2件的中） |
 | [EXP-012](EXP-012-temperature.md) | サンプリング温度は性能を変えるか | **rejected**（仮説は追試されず） |
 | [EXP-013](EXP-013-llm-vs-rule.md) | AI腕 vs ルール腕 | **confirmed**（ルール腕が有意に優位） |
+| [EXP-014](EXP-014-llm-vs-rule-v4.md) | AI腕 vs ルール腕（v4・定格の不変条件） | **confirmed**（同じ結論） |
+| [EXP-015](EXP-015-llm-vs-rule-v5.md) | AI腕 vs ルール腕（v5・O₂ がキャビン大気） | **confirmed**（3世代目・同じ結論） |
+| [EXP-016](EXP-016-scoring-resolution.md) | 判断の分解能はどの軸にあるか（再採点のみ） | **confirmed**（C・D にしか無い） |
 
 ## データの所在
 
@@ -61,6 +64,8 @@ status:        confirmed | rejected | superseded | invalidated
 | `~/ea-runs/2026-08-26-v3-noise/` | v3 | LLM 10 run。ノイズ床（EXP-011） |
 | `~/ea-runs/2026-08-26-v3-temperature/` | v3 | LLM 14 run + 参照2。温度の検証（EXP-012） |
 | `~/ea-runs/2026-08-26-v3-llm-vs-rule/` | v3 | LLM 24 run + 参照2。**本題の比較**（EXP-013） |
+| `~/ea-runs/2026-08-27-v4-llm-vs-rule/` | **v4**（定格の不変条件） | LLM 24 run + 参照2（EXP-014） |
+| `~/ea-runs/2026-08-28-v5-llm-vs-rule/` | **v5**（O₂ がキャビン大気・水が [V2 6109]） | LLM 24 run + 参照2（EXP-015 / EXP-016） |
 
 各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
 
