@@ -5,11 +5,32 @@ experiment_id: EXP-025
 date:          2026-08-29
 git_commit:    899bb3c
 branch:        experiment/eclss-evaluation-layer
-status:        **①設計文書。測定していない。第1版（競争の設計）は下で撤回した**
+status:        **撤回（第1版・第2版とも）。測定は実行していない → [EXP-026](EXP-026-the-metric-a-constant-string-wins.md)**
 費用:          designer 1回 = **4分27秒**（27B・4体・think 有効・実測）
                第1段階 60 run = **約4.5時間**。ea evaluate は 0.4秒/本（`899bb3c` で修正後）
 ```
 
+> **⚠⚠ 第2版も撤回した（[EXP-026](EXP-026-the-metric-a-constant-string-wins.md)・独立監査3体・全件再現）。**
+>
+> ```
+> 主指標が壊れていた  run を一切読まない定数1行 {"target":"thresholds.co2_storage_high_kg","value":1.8}
+>                     で **救出 10/10**。value=true でも -5.0 でも救出する
+> 副指標も壊れていた  graph_rewire は payload の中身を見ずに通り、しかも ros2 専用で
+>                     plant_sim には構造的に届かない。probe の真の無効率は 79% でなく **14/14**
+> 致命的な交絡        LLM が JSON を吐き損ねると**ルールの正解が黙って代筆**され、それは 10/10 救出する。
+>                     腕2 はプロンプトが長い＝失敗しやすい＝望む結論が出やすい
+> 目的を伝えていない  designer のプロンプトに **crew / 乗員 / occupant が1語も無い**。
+>                     主指標は「乗員救出」なのに、モデルは乗員の存在を知らない
+> 選択肢の6/10 が死物 agents.*.policy.* は merge_labeled_policy_from_thresholds に上書きされる
+> 降りる枝が無い      どの結末も「続く」に着地。第1版にあった集合B を第2版で落としていた
+> 著者の誤り          「うち約1.5分が simulation」→ 実測 0.096秒（**約1000倍**）。
+>                     「スキーマを足す」→ 既に入っている（persona.py:209）
+> ```
+>
+> **4.5時間は払わない。直すものは全て GPU 0秒。詳細は EXP-026。**
+>
+> ---
+>
 > **⚠ 第1版を撤回した。** 初版は「対照＝ルール designer／処置＝LLM designer」という
 > **競争の設計**だった。ROADMAP が「あるべき姿ではない」と明記した形そのものである。
 >
