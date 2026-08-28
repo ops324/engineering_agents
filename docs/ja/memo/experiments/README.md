@@ -51,6 +51,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-015](EXP-015-llm-vs-rule-v5.md) | AI腕 vs ルール腕（v5・O₂ がキャビン大気） | **confirmed**（3世代目・同じ結論） |
 | [EXP-016](EXP-016-scoring-resolution.md) | 判断の分解能はどの軸にあるか（再採点のみ） | **retracted**（独立監査で撤回） |
 | [EXP-017](EXP-017-no-tradeoff.md) | この運用点には代償が無い | **confirmed（負の結果）**（判断を置く場所が無い） |
+| [EXP-018](EXP-018-scarcity-without-value.md) | 希少性だけでは判断は生まれない（案1） | **confirmed（負の結果）**（案1 は退化。案3 が前提） |
 
 ## データの所在
 
@@ -67,6 +68,7 @@ status:        confirmed | rejected | superseded | invalidated
 | `~/ea-runs/2026-08-26-v3-llm-vs-rule/` | v3 | LLM 24 run + 参照2。**本題の比較**（EXP-013） |
 | `~/ea-runs/2026-08-27-v4-llm-vs-rule/` | **v4**（定格の不変条件） | LLM 24 run + 参照2（EXP-014） |
 | `~/ea-runs/2026-08-28-v5-llm-vs-rule/` | **v5**（O₂ がキャビン大気・水が [V2 6109]） | LLM 24 run + 参照2（EXP-015 / EXP-016） |
+| `~/ea-runs/2026-08-29-exp018-plan1/` | v5 | 決定的 5 run。案1 の退化（EXP-018）。`exp018.sh` で再生成可 |
 
 各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
 
