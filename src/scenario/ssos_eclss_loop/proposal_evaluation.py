@@ -198,8 +198,17 @@ def _overrides_for(config: Dict[str, Any], seed: Optional[int]) -> Dict[str, Any
 
     Using the resolved config rather than rebuilding from flags is what makes
     the two arms differ in the proposal and nothing else: every override,
-    failure injection and agent setting the baseline resolved carries over
+    failure injection and **actor** setting the baseline resolved carries over
     verbatim.
+
+    The one thing that does not carry over is the *designer*. It runs after the
+    simulation, so it cannot touch a trajectory, and whatever it proposes here
+    is written into an arm directory and never read: the proposal under test is
+    the baseline's, passed in through ``apply_proposals_path``. Inheriting the
+    baseline's ``agents.design.mode`` therefore buys nothing and costs a full
+    designer pass per arm. With ``design.mode: llm`` that is two 27B calls per
+    repeat -- measured at 4.5 minutes each, which is three times the cost of the
+    run being evaluated and would have quietly tripled the bill for EXP-025.
     """
     overrides = copy.deepcopy(config)
     for key in ("name", "description", "output"):
@@ -208,6 +217,12 @@ def _overrides_for(config: Dict[str, Any], seed: Optional[int]) -> Dict[str, Any
         simulation = dict(overrides.get("simulation") or {})
         simulation["seed"] = int(seed)
         overrides["simulation"] = simulation
+    agents = dict(overrides.get("agents") or {})
+    if agents:
+        design = dict(agents.get("design") or {})
+        design["mode"] = "none"
+        agents["design"] = design
+        overrides["agents"] = agents
     return overrides
 
 

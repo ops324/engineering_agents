@@ -364,3 +364,27 @@ def test_a_proposal_can_no_longer_buy_super_rated_capacity(tmp_path, baseline):
     assert not control_sizing["oversized_by_kind"].get("air_revitalisation")
     assert sizing["within_capacity_fraction"] < control_sizing["within_capacity_fraction"]
     assert sizing["sizing_score"] < control_sizing["sizing_score"]
+
+
+def test_the_arms_do_not_re_run_the_designer(tmp_path):
+    """The designer runs after the simulation, so it cannot touch a trajectory,
+    and whatever it proposes inside an arm is written and never read -- the
+    proposal under test comes from the baseline.
+
+    Inheriting agents.design.mode therefore buys nothing. With llm it costs two
+    27B passes per repeat: measured at 4.5 minutes each against a 0.4 second
+    evaluation, which would have tripled the bill for EXP-025 without changing
+    a single number.
+    """
+    from scenario.ssos_eclss_loop.proposal_evaluation import _overrides_for
+
+    config = {
+        "agents": {"actor": {"mode": "labeled_rule_base"}, "design": {"mode": "llm"}},
+        "simulation": {"steps": 30},
+    }
+    arms = _overrides_for(config, seed=101)
+    assert arms["agents"]["design"]["mode"] == "none"
+    # The actor is what the arms are re-running; it carries over untouched.
+    assert arms["agents"]["actor"]["mode"] == "labeled_rule_base"
+    # And the caller's config is not mutated.
+    assert config["agents"]["design"]["mode"] == "llm"
