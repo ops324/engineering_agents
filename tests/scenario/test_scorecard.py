@@ -127,3 +127,26 @@ def test_a_run_that_fails_the_gate_is_not_scored(rule_run, tmp_path):
     assert card["scorable"] is False
     assert card["axes"]["actor_remaining"]["points"] is None
     assert card["total"]["points"] is None
+
+
+def test_the_step_rating_counts_as_the_plant_doing_all_it_could(rule_run):
+    """model.py names one physical limit two ways -- "rated_step_capacity" when
+    the step's allowance is already spent, "ogs_capacity"/"wrs_capacity" when it
+    is not -- so scoring only one of them scored the same physics twice over.
+    D's entire spread in v4 and v5 was that missing word."""
+    from scenario.ssos_eclss_loop.scorecard import _SATURATION_REASONS
+
+    assert "rated_step_capacity" in _SATURATION_REASONS
+    for twin in ("ogs_capacity", "wrs_capacity"):
+        assert twin in _SATURATION_REASONS
+
+
+def test_d_does_not_move_on_this_plant(rule_run):
+    """Not a formality. D is the plant's axis, and this plant never fails to
+    deliver what it physically can, so D is a constant and cannot separate arms.
+    A run that scores anything but full marks means a new limiter appeared and
+    nobody decided whether it counts as saturation."""
+    card = score_run(rule_run)
+    axis = card["axes"]["D_response"]
+    assert axis["points"] == pytest.approx(5.0)
+    assert axis["parts"]["delivered_all_it_could"] == axis["parts"]["commands"]

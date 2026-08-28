@@ -441,9 +441,23 @@ _COMMAND_OUTCOME_KINDS = frozenset({
     "/eclss/events/operational_rejected",
 })
 
+#: Limiters that mean "the machine gave everything it physically could", per
+#: _score_d's contract: fully satisfied, or limited only by its own capacity or
+#: by the inventory available.
+#:
+#: ``rated_step_capacity`` belongs here and was missing until 2026-08-28. It is
+#: the same physical limit as ``ogs_capacity`` / ``wrs_capacity`` -- model.py
+#: picks between the two names by whether the step's allowance was already spent
+#: (``"rated_step_capacity" if spent > tol else "ogs_capacity"``) -- so leaving
+#: one name out scored the same physics two different ways. The whole of D's
+#: variance in v4 and v5 came from the omission: adding the word returns every
+#: run in all three generations to 5.000, SD 0. That makes D a constant here,
+#: which is the true statement about this plant. Asking for more than a step can
+#: process is a sizing error and C already scores it; D is the plant's axis.
 _SATURATION_REASONS = frozenset({
     "cabin_co2_inventory", "ogs_capacity", "product_water", "urine_buffer",
     "grey_water", "wrs_capacity", "captured_co2", "available_o2",
+    "rated_step_capacity",
 })
 
 
