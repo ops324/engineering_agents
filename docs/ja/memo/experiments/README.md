@@ -53,7 +53,8 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-017](EXP-017-no-tradeoff.md) | この運用点には代償が無い | **confirmed（負の結果）**（判断を置く場所が無い） |
 | [EXP-018](EXP-018-scarcity-without-value.md) | 希少性だけでは判断は生まれない（案1） | **confirmed（負の結果）**（案1 は退化。案3 が前提） |
 | [EXP-019](EXP-019-failure-has-no-ambiguity.md) | 故障には期限があるが曖昧さが無い（案4） | **confirmed（負の結果）**（案4 も退化。同じ壁に3回目） |
-| [EXP-020](EXP-020-o2-resolution-is-discarded.md) | O₂ の分解能を採点式が捨てている（再採点のみ） | **confirmed**（O₂ は採点の問題・水は物理。⚠物差しハザード） |
+| [EXP-020](EXP-020-o2-resolution-is-discarded.md) | O₂ の分解能を採点式が捨てている（再採点のみ） | **partially retracted**（EXP-021。観察は正しく、直し方が誤り） |
+| [EXP-021](EXP-021-the-guard-broke-a-third-time.md) | 独立監査：EXP-020 の撤回と、ガードの破れ3件 | **confirmed**（★ガードが3度目に破られた。乗員2→4・+24.33点） |
 
 ## データの所在
 
