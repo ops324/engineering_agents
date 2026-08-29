@@ -66,6 +66,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-030](EXP-030-the-window-was-cutting-the-ending.md) | 案3 は成立しない。定数が勝ち、50 step が結末を切っていた | **confirmed**（★**生存者数は打ち切りカウント** — 評価層全体に効く） |
 | [EXP-031](EXP-031-the-second-headline-was-the-window.md) | 本題の第一の見出しは無傷、第二の見出しは窓 50 の産物 | **confirmed**（★「LLM ≈ no-op」は W=15 で**反転**。公表値も step 887 までの数字） |
 | [EXP-032](EXP-032-we-moved-the-window-and-moved-it-back.md) | 観測窓を 72 にして戻した。分解能は増えなかった | **reverted**（★設定は 50 のまま。**request_o2 が窓より重い交絡**と判明） |
+| [EXP-033](EXP-033-the-trap-and-what-it-did-not-explain.md) | `request_o2` は罠。だが除くと LLM は no-op に**勝つ** | **confirmed**（★初稿の見出しが監査で**反転**。EXP-015 の README と整合） |
 
 ## データの所在
 
