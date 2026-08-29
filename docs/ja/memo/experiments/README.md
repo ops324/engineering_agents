@@ -64,6 +64,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-028](EXP-028-the-loop-is-closed.md) | 案3 は成立しない。ARS に水のコストが無く、ループが閉じている | **retracted**（EXP-029。格子・飽和・探索空間の3点で誤り） |
 | [EXP-029](EXP-029-the-audit-broke-exp-028.md) | 独立監査が EXP-028 を壊した | **partially retracted**（EXP-030。摘発は有効、「案3 は成立する」は撤回） |
 | [EXP-030](EXP-030-the-window-was-cutting-the-ending.md) | 案3 は成立しない。定数が勝ち、50 step が結末を切っていた | **confirmed**（★**生存者数は打ち切りカウント** — 評価層全体に効く） |
+| [EXP-031](EXP-031-the-second-headline-was-the-window.md) | 本題の第一の見出しは無傷、第二の見出しは窓 50 の産物 | **confirmed**（★「LLM ≈ no-op」は W=15 で**反転**。公表値も step 887 までの数字） |
 
 ## データの所在
 

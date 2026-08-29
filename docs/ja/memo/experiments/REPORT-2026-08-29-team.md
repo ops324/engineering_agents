@@ -65,6 +65,20 @@ AI 腕は各世代 24 run、ルール腕と no-op 腕は決定的なので各1 r
 | v4 | 装置の定格・AI への情報開示 | 82.20 | 61.49 | 68.67 | −20.71 | 0.00001 |
 | **v5** | **酸素をキャビン大気に・水を規格に** | **82.23** | **66.26** | **68.67** | **−15.97** | **<0.000001** |
 
+> **⚠ この表の読み方（2026-08-29・EXP-031 で判明）**
+>
+> **「ルール腕が AI 腕に有意に優る」は無傷です**（観測時間を 15〜50 step のどこで切っても、
+> 3世代すべてで有意・向きも一定）。
+>
+> **しかし「AI 腕は何もしない腕と区別できない」は、観測時間を 50 に選んだことの結果でした。**
+> 同じ実験データを 15 step で切ると、**3世代すべてで AI 腕のほうが有意に良い**という
+> 逆の結論になります。理由は「**AI 腕は早く動くが続かない**」で、
+> 50 step では「続かない」が、15 step では「早い」が支配するためです。
+>
+> **そして 82.23 という数字自体も「打ち切った時点の値」です。** ルール腕も
+> 887〜894 step で水が尽きて全員を失い、同じ指標が 32.57 に落ちます。
+> **50 step という観測時間を選んだ根拠は、どこにも書かれていません。**
+
 ```
 ルール腕 − no-op  +13.5636      no-op − AI  +2.4091（p=0.215 ＝ 区別できない）
 ```
@@ -482,6 +496,7 @@ upstream #59            取り込んでも成績が変わらないと確認済�
 | EXP-028 | 案3 が成立しないと判明 — **撤回済み**（EXP-029） | [EXP-028](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-028-the-loop-is-closed.md) |
 | EXP-029 | 独立監査が EXP-028 を覆した（「案3 は成立する」の部分は**撤回**） | [EXP-029](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-029-the-audit-broke-exp-028.md) |
 | **EXP-030** | **案3 は保留。生存者数が「打ち切られたカウント」だと判明** | [EXP-030](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-030-the-window-was-cutting-the-ending.md) |
+| **EXP-031** | **本題の第一の見出しは無傷。第二の見出し（AI ≒ 何もしない）は観測時間 50 の産物** | [EXP-031](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-031-the-second-headline-was-the-window.md) |
 
 ## 主要な修正コミット
 
