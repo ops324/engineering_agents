@@ -4,6 +4,27 @@
 
 **最終更新: 2026-08-29（EXP-035 を追加。設定は 50 のまま・公表値も不変）。**
 
+## ✅ `request_o2` の実バグを直した（2026-08-29）— **公表値は不変**
+
+**「拒否された」と記録された指令でも在庫が減る**問題（EXP-033・v3 llm_r12 で乗員3人が死亡）。
+
+```
+機構    plant_sim の `_request` が **payout を先に呼び**、granted < amount なら success=False。
+        model は `min(在庫, 要求)` の部分払い出しなので、**拒否と記録されても在庫は減っていた**
+根拠    実機仕様（チーム判断4 の A）は**待っていない**。決めたのは
+        「**この repo の2つの backend が食い違っている**」ことだけ。
+        `loop_mock_backend` が "All-or-nothing like SSOS /ogs/request_o2" と**名指しで**書いており、
+        mock のほうが自分の文書どおりに実装していた。plant_sim をそちらに合わせた
+修正    在庫不足なら**何も動かさずに拒否**（o2 / co2 / product water の3つとも）
+検証    **公表値 82.2297 / 68.6661 は不変**（ルール腕は request_* を構造上出さない・実測で確認）
+        既存 run の再採点も不変（telemetry は固定）。テスト 642 → **646 passed**
+        旧テスト `test_service_partial_grant_semantics` は元 PR #40 由来で意図の記述なし。
+        新契約に書き換えた（隣の `..._blocks_action_without_mutation` と同じ原則）
+残る    ⚠ **今後 LLM 腕を回すと、過大要求を出した run は v5 と比較できない**
+        チーム判断4 の A（実機の仕様）/ B（プロンプトから外す）/ C（改名）は**未決のまま**
+        A が「払い出してから判定」に決まれば **revert は1コミット**
+```
+
 ## ⚠⚠ 撤回の総点検を初めてやった（2026-08-29・read-only・GPU 0秒）
 
 `~/ea-runs/analysis-tools/stale_sweep.py`。**撤回した主張が、断り無しに生きた主張として

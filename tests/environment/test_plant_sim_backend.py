@@ -183,12 +183,26 @@ def test_invalid_service_request_rejected(bad):
     assert b.model.state.cabin_o2_kg == pytest.approx(1.0, **APPROX)
 
 
-def test_service_partial_grant_semantics():
+def test_service_rejects_instead_of_granting_a_partial_amount():
+    """在庫を超える要求は、**何も動かさずに**拒否する。
+
+    2026-08-04 の元実装（#40）は ``min(在庫, 要求)`` を払い出してから
+    ``success=False`` を返しており、このテストはその挙動（response_value=0.1）を
+    固定していた。**しかし呼び出し側はそれを「拒否」として記録する** ため、
+    記録上は拒否・実体は消費、という食い違いが残っていた（EXP-033）。
+    契約は同じ repo の ``loop_mock_backend.request_o2`` が
+    「All-or-nothing like SSOS ``/ogs/request_o2``」と明示している側に合わせる。
+
+    ⚠ 実機の仕様がどちらかは**チーム判断4 として未決**。ここで固定するのは
+    「この repo の2つの backend が矛盾しないこと」だけである。
+    """
     b = _backend(initial_cabin_o2_kg=0.1)
+    before = b.model.state.cabin_o2_kg
     r = b.request_o2(0.5)
     assert r.success is False
-    assert r.response_value == pytest.approx(0.1, **APPROX)
-    assert "partial" in r.message
+    assert r.response_value == pytest.approx(0.0, **APPROX)
+    assert "rejected without withdrawing" in r.message
+    assert b.model.state.cabin_o2_kg == pytest.approx(before, **APPROX)
 
 
 def test_service_full_grant():
@@ -260,3 +274,57 @@ def test_state_finite_and_nonnegative_after_mutations():
 
     for f in fields(b.model.state):
         assert math.isfinite(getattr(b.model.state, f.name)), f.name
+
+
+# --- 拒否した要求は状態を変えない（2026-08-29・EXP-033 が見つけた実バグ） -------------
+#
+# plant_sim の ``_request`` は payout を先に呼び、granted < amount なら success=False を
+# 返していた。model 側は ``min(在庫, 要求)`` の**部分払い出し**なので、
+# **「rejected」と記録された指令でも在庫は減っていた**。
+# ループ層はその後に success を読んで ``/eclss/events/operational_rejected`` を出すため、
+# 記録上は拒否・実体は消費、という食い違いになる（v3 llm_r12 で拒否指令が乗員3人を殺した）。
+#
+# 正しい契約は同じ repo が既に書いている — ``loop_mock_backend.request_o2``:
+#   "All-or-nothing like SSOS ``/ogs/request_o2``: reject without mutating storage
+#    when the full requested mass is unavailable (no partial grant)."
+
+
+def test_rejected_o2_request_does_not_move_the_cabin():
+    backend = _backend()
+    before = backend.model.state.cabin_o2_kg
+    delivered_before = backend.model.state.total_o2_delivered_kg
+
+    result = backend.request_o2(before + 5.0)  # 在庫を超える要求
+
+    assert result.success is False
+    assert result.response_value == 0.0
+    assert backend.model.state.cabin_o2_kg == pytest.approx(before, **APPROX)
+    assert backend.model.state.total_o2_delivered_kg == pytest.approx(
+        delivered_before, **APPROX
+    )
+
+
+def test_rejected_co2_request_does_not_move_captured_store():
+    backend = _backend()
+    before = backend.model.state.captured_co2_kg
+    result = backend.request_co2(before + 5.0)
+    assert result.success is False
+    assert backend.model.state.captured_co2_kg == pytest.approx(before, **APPROX)
+
+
+def test_rejected_product_water_request_does_not_move_the_tank():
+    backend = _backend()
+    before = backend.model.state.product_water_l
+    result = backend.request_product_water(before + 10.0)
+    assert result.success is False
+    assert backend.model.state.product_water_l == pytest.approx(before, **APPROX)
+
+
+def test_a_request_that_fits_is_still_granted_in_full():
+    backend = _backend()
+    before = backend.model.state.cabin_o2_kg
+    want = before / 2.0
+    result = backend.request_o2(want)
+    assert result.success is True
+    assert result.response_value == pytest.approx(want, **APPROX)
+    assert backend.model.state.cabin_o2_kg == pytest.approx(before - want, **APPROX)

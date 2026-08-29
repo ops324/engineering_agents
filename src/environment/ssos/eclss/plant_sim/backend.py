@@ -231,13 +231,22 @@ class PlantSimEclssBackend:
     # services (payout / intake from existing inventory; independent of failures)
     # ------------------------------------------------------------------ #
     def request_o2(self, amount: float) -> ServiceResult:
-        return self._request(amount, self.model.request_o2, "o2")
+        return self._request(
+            amount, self.model.request_o2, "o2", lambda: self.model.state.cabin_o2_kg
+        )
 
     def request_co2(self, amount: float) -> ServiceResult:
-        return self._request(amount, self.model.request_co2, "co2")
+        return self._request(
+            amount, self.model.request_co2, "co2", lambda: self.model.state.captured_co2_kg
+        )
 
     def request_product_water(self, liters: float) -> ServiceResult:
-        return self._request(liters, self.model.request_product_water, "product water")
+        return self._request(
+            liters,
+            self.model.request_product_water,
+            "product water",
+            lambda: self.model.state.product_water_l,
+        )
 
     def submit_grey_water(self, liters: float) -> ServiceResult:
         if not _finite(liters) or liters <= 0:
@@ -245,9 +254,35 @@ class PlantSimEclssBackend:
         accepted = self.model.submit_grey_water(liters)
         return ServiceResult(True, accepted, "grey water accepted")
 
-    def _request(self, amount: float, payout, label: str) -> ServiceResult:
+    def _request(self, amount: float, payout, label: str, available) -> ServiceResult:
+        """All-or-nothing withdrawal: decide before moving anything.
+
+        This used to call ``payout`` first and read the result to decide success.
+        The model pays out ``min(stock, amount)``, so a request larger than the
+        stock took a partial amount and then reported ``success=False`` -- and
+        the loop layer, which reads ``success`` afterwards, logged it as
+        ``/eclss/events/operational_rejected``. **A command recorded as rejected
+        had already emptied part of the cabin.** In v3 run ``llm_r12`` three crew
+        died to withdrawals the record calls refused (2026-08-29, EXP-033).
+
+        The contract this restores is not invented here: ``loop_mock_backend``
+        already states it, naming the service it mirrors --
+
+            All-or-nothing like SSOS ``/ogs/request_o2``: reject without mutating
+            storage when the full requested mass is unavailable (no partial grant).
+
+        The two backends disagreed; the mock was the one that matched its own
+        documentation, so plant_sim moves to it. Whether the flight article
+        really is all-or-nothing is a hardware-spec question and is with the team
+        (report 2026-08-29, decision 4); this change only stops the two backends
+        in this repository from contradicting each other.
+        """
         if not _finite(amount) or amount <= 0:
             return ServiceResult(False, 0.0, f"invalid {label} request: must be finite and > 0")
+        if available() < amount - self.config.invariant_tolerance:
+            return ServiceResult(
+                False, 0.0, f"insufficient {label}: rejected without withdrawing"
+            )
         granted = payout(amount)
         success = granted >= amount - self.config.invariant_tolerance
         message = f"{label} delivered" if success else f"partial: insufficient {label}"
