@@ -11,6 +11,20 @@ run データ:    700本（summary.json を持つもの・全データ付きで�
 報告期間:      2026-06-21（計画開始）〜 2026-08-29
 ```
 
+## リンク
+
+| | |
+|---|---|
+| **ブランチ** | https://github.com/ops324/engineering_agents/tree/experiment/eclss-evaluation-layer |
+| **この資料** | https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/REPORT-2026-08-29-team.md |
+| **土台からの差分**（101コミット・76ファイル・+13,905行） | https://github.com/ops324/engineering_agents/compare/d5616389...experiment/eclss-evaluation-layer |
+| **upstream/trunk との比較** | https://github.com/hirototamura/engineering_agents/compare/trunk...ops324:experiment/eclss-evaluation-layer |
+| 最新コミット | `98c56d0` → https://github.com/ops324/engineering_agents/commit/98c56d0 |
+
+**PR は出していません**（フロー上、実験段階では作らない運用）。差分を見るだけなら上の compare リンクで足ります。
+
+---
+
 > **⚠ 読むときの前提。** この枝は main から切って**独自に改造・検証している**もので、
 > チームの合意待ちではありません。**この枝で選択したもの**（乗員4人・生死判定の帯の分離・
 > A〜D の配点式・キャビン容積 388 m³）は**チームの基準ではありません**。
@@ -377,19 +391,50 @@ upstream #59            取り込んでも成績が変わらないと確認済�
 
 # 8. 参照
 
+以下はすべて `experiment/eclss-evaluation-layer` ブランチ上のリンクです。
+
+## まず読むもの
+
+| 何 | リンク |
+|---|---|
+| **現在地**（次にやること・未解決の一覧） | [`STATE.md`](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/STATE.md) |
+| **順序と理由**（原則1〜4。なぜこの順で進めるか） | [`ROADMAP.md`](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/ROADMAP.md) |
+| 実験記録の一覧（EXP-000〜027・撤回したものも理由つきで保存） | [`experiments/`](https://github.com/ops324/engineering_agents/tree/experiment/eclss-evaluation-layer/docs/ja/memo/experiments) |
+| 設計文書（撤回したものは冒頭に撤回ヘッダ） | [`ssos_eclss_loop/`](https://github.com/ops324/engineering_agents/tree/experiment/eclss-evaluation-layer/docs/ja/memo/ssos_eclss_loop) |
+
+## 第3期の中心となる実験記録
+
+| | 内容 | リンク |
+|---|---|---|
+| EXP-022 | 計器の穴を3件発見（`--steps` ほか）。前任の推奨の前提が誤りと判明 | [EXP-022](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-022-the-guard-had-four-more-windows.md) |
+| EXP-023 | 自分で書いた撤回条件が実装前に発火 | [EXP-023](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-023-the-rule-i-wrote-fired.md) |
+| EXP-024 | 誰も回していなかった提案検証ループを回した（乗員10人救出） | [EXP-024](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-024-the-loop-nobody-ran.md) |
+| EXP-026 | 主指標が定数1行で満点になった（監査3体） | [EXP-026](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-026-the-metric-a-constant-string-wins.md) |
+| **EXP-027** | **設計の層にも判断が無い（同じ壁の4回目）** | [EXP-027](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-027-the-designer-layer-degenerates-too.md) |
+
+## 主要な修正コミット
+
+| コミット | 内容 |
+|---|---|
+| [`944bbe0`](https://github.com/ops324/engineering_agents/commit/944bbe0) | `--steps` の穴ほか3件 |
+| [`5224396`](https://github.com/ops324/engineering_agents/commit/5224396) | 帯を config と照合／古い記述5箇所 |
+| [`0d17616`](https://github.com/ops324/engineering_agents/commit/0d17616) | キャビン容積を run に記録し拒否側で守る |
+| [`899bb3c`](https://github.com/ops324/engineering_agents/commit/899bb3c) | 提案の検証が AI を二重に呼んでいたのを止めた |
+| [`152013c`](https://github.com/ops324/engineering_agents/commit/152013c) | 棄却理由の保存／提案値の検証／designer に乗員を伝える |
+| [`1327bac`](https://github.com/ops324/engineering_agents/commit/1327bac) | 有効提案率の測定ツール |
+
+## リポジトリ外（ローカルのみ）
+
 ```
-現在地           docs/ja/memo/experiments/STATE.md
-順序と理由        docs/ja/memo/experiments/ROADMAP.md（原則1〜4）
-各実験            docs/ja/memo/experiments/EXP-000〜027.md（撤回したものも理由つきで保存）
-第3期の中心       EXP-022（ガードの穴）／EXP-023（撤回条件が発火）／EXP-024（ループを回した）
-                 EXP-026（主指標の故障）／EXP-027（設計の層も退化）
-設計文書          docs/ja/memo/ssos_eclss_loop/（撤回したものは冒頭に撤回ヘッダ）
+run データ        ~/ea-runs/（700本・telemetry 全文つき・git 管理外）
 解析ツール        ~/ea-runs/analysis-tools/
                  compare.py（腕の比較）／effective_rate.py（有効提案率）
                  retro_bar.py（遡ってガードを走らせる）／tstat.py（自前の t 検定）
-run データ        ~/ea-runs/（700本・telemetry 全文つき・git 管理外）
 バックアップ      外付けディスクに48M。取得後に復元して再採点まで通して検証済み
 ```
+
+**run データは git 管理外です。** 共有が必要な場合は別途ご相談ください
+（LLM の run は seed を固定しても再現しないため、消えると復元できません）。
 
 **採点のしかたを変えても、過去の実験を1本も走らせ直さずに採点し直せます。**
 第3期で計器を9箇所直したときも、実際にそうしました（公表値は1つも動いていません）。
