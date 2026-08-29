@@ -312,9 +312,17 @@ def _scoring_bar_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -
 #: ``--actor-mode none --steps 2`` at 86.10 of 90 -- 1.75 above the published
 #: rule arm, 16.72 above the same arm at 50 steps -- with both guards reading
 #: ``[]`` and no warning printed anywhere. One flag, and the run that does
-#: nothing wins. The published runs all pass ``--steps 50`` against a
-#: scenario.yaml that says 50, so they stay clean and this costs no sweep a
-#: false positive.
+#: nothing wins.
+#:
+#: This used to end "the published runs all pass ``--steps 50`` against a
+#: scenario.yaml that says 50, so they stay clean". EXP-032 made that false by
+#: moving the default to 72, and the sentence is corrected rather than deleted
+#: because the correction is the point: **a guard whose rationale rests on what
+#: the current default happens to be goes stale the day the default moves.**
+#: What is actually true, and stays true, is narrower -- a run that names a
+#: window other than the scenario's own is recorded as having done so, whatever
+#: the scenario's window is. The v3/v4/v5 runs at 50 are now flagged, correctly:
+#: they are a different generation from the one scored here.
 _OPERATING_POINT_IGNORED = {"simulation.seed"}
 
 

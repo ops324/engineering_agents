@@ -96,7 +96,7 @@ docker exec ssos test -f /root/ssos-eclss-headless.sh && echo "headless helper O
 docker exec ssos test -d /ea/src/scenario/ssos_eclss_loop && echo "src mount OK"
 
 # 4. シミュレーション
-ea run ssos_eclss_loop --actor-mode labeled_rule_base --steps 50
+ea run ssos_eclss_loop --actor-mode labeled_rule_base
 
 # 5. 結果確認
 ea results
@@ -119,7 +119,7 @@ LLM を使う場合は `--actor-mode llm` および/または `--design-mode llm
 ```bash
 cd /path/to/engineering_agents
 source .venv/bin/activate
-ea run ssos_eclss_loop --actor-mode labeled_rule_base --steps 50
+ea run ssos_eclss_loop --actor-mode labeled_rule_base
 ea results
 ```
 
@@ -129,7 +129,7 @@ ea results
 docker start ssos
 cd /path/to/engineering_agents
 source .venv/bin/activate
-ea run ssos_eclss_loop --actor-mode labeled_rule_base --steps 50
+ea run ssos_eclss_loop --actor-mode labeled_rule_base
 ea results
 ```
 

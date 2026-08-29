@@ -117,7 +117,7 @@ macOS 初回セットアップ — **ホスト** のみで実行:
 
 ```bash
 ./scripts/ssos/mac/ssos-run-detached.sh
-ea run ssos_eclss_loop --actor-mode labeled_rule_base --steps 50
+ea run ssos_eclss_loop --actor-mode labeled_rule_base
 ea results
 ```
 

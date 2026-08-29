@@ -35,7 +35,10 @@ actor:
     # metabolism to push straight back over it, and two consecutive steps in the
     # band costs an occupant. 0.25 kg is ~4.3 steps of crew-4 CO2 -- and at the
     # rated ARS margin (1.082x) it is the smallest target that still buys every
-    # step of ARS the run can use; a wider one changes nothing in 50 steps.
+    # step of ARS the run can use; a wider one changed nothing in the 50-step
+    # window this was tuned in. **Not re-checked at 72 (EXP-032).** The tuning
+    # argument is window-dependent and the window moved; re-sweeping it costs
+    # seconds and has not been done.
     co2_recovery_margin_kg: 0.25  # [kg] recover to co2_storage_high_kg - this
     wrs_feed_trigger_l: 0.5  # [L] start WRS when urine+grey buffer ≥ this
     ars_goal:  # air_revitalisation payload
