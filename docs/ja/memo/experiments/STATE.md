@@ -2,7 +2,7 @@
 
 セッションを跨ぐための状態。**次に読むべきものと、次にやるべきこと。**
 
-**最終更新: 2026-08-28（EXP-016 訂正・独立監査3体の反映後）。**
+**最終更新: 2026-08-29（EXP-021〜027・監査3巡・チーム報告書まで反映）。**
 ファイル名には日付を入れない — 作業のたびに書き換える1枚であって、日付つきの名前だと
 中身が更新されても名前が古いままになり、どれが現在地か分からなくなる（実際に一度なった）。
 過去の時点の姿が要るときは git 履歴を見ること。
@@ -10,7 +10,7 @@
 ## ブランチ
 
 ```
-experiment/eclss-evaluation-layer   （土台から73コミット。**うち直近9本は origin 未 push** — 2026-08-29 実測）
+experiment/eclss-evaluation-layer   （土台から103コミット。**origin と同期済み・未 push 0本** — 2026-08-29 実測）
   土台: d5616389（#58）。**upstream/trunk は c7f3d89（#59）に進んでいて未取り込み**
         → #59 はルール腕を「1 step に ceil(不足/効果) 回」に変えたが、この枝の定格の
           不変条件が同一 step の合算を1回分で止めるので**効果ゼロ**（EXP-016 の確認と同じ根拠）。
@@ -24,7 +24,7 @@ experiment/eclss-evaluation-layer   （土台から73コミット。**うち直�
 チームの基準ではないので、報告時に区別すること。
 
 ```
-テスト: 619 passed / 5 skipped / 0 failed（2026-08-28 実測）
+テスト: 636 passed / 5 skipped / 0 failed（2026-08-29 実測）
         ※ かつてここには「587 passed / 14 failed」と書いてあったが、古い記述だった。
           2026-08-27 に実測したところ、変更前のベースラインは 601 passed / 0 failed。
           14件の失敗は再現しない。**それでも差分で見る習慣は変えない**
@@ -489,7 +489,7 @@ run データ      ~/ea-runs/ の7ディレクトリ（54 MB、telemetry 全文�
                   公表値は `run 自身の閾値`＝`score_run(dir, habitat=None)`。**`ea scorecard` では出せない**
                   決定的な腕は n=1 なので Welch ではなく1標本 t 検定
                 各実験のバッチスクリプト（sweep / noise / temperature / llm-vs-rule）
-経緯            この repo の 73コミット + EXP-000〜017
+経緯            この repo の 103コミット + EXP-000〜027
 会話ログ        ~/.claude/projects/-Users-takimototetsuya-Coup-de-Burst-/*.jsonl
 次回プロンプト   ~/ea-runs/next-session-prompt.md
 ```
