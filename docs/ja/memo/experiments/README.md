@@ -62,7 +62,8 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-026](EXP-026-the-metric-a-constant-string-wins.md) | 主指標が判断を測っていなかった（定数1行が満点） | **confirmed**（★測る前に「判断ゼロの入力」を通す規律の出所） |
 | [EXP-027](EXP-027-the-designer-layer-degenerates-too.md) | 設計の層にも内点が無い。定数がルールを27本ぶん上回る | **confirmed（負の結果）**（同じ壁に4回目） |
 | [EXP-028](EXP-028-the-loop-is-closed.md) | 案3 は成立しない。ARS に水のコストが無く、ループが閉じている | **retracted**（EXP-029。格子・飽和・探索空間の3点で誤り） |
-| [EXP-029](EXP-029-the-audit-broke-exp-028.md) | 独立監査が EXP-028 を壊した。案3 は成立する | **confirmed**（★締める相手は水だけでなく **O₂ × 水**。ガードの穴10個目も） |
+| [EXP-029](EXP-029-the-audit-broke-exp-028.md) | 独立監査が EXP-028 を壊した | **partially retracted**（EXP-030。摘発は有効、「案3 は成立する」は撤回） |
+| [EXP-030](EXP-030-the-window-was-cutting-the-ending.md) | 案3 は成立しない。定数が勝ち、50 step が結末を切っていた | **confirmed**（★**生存者数は打ち切りカウント** — 評価層全体に効く） |
 
 ## データの所在
 
@@ -83,6 +84,7 @@ status:        confirmed | rejected | superseded | invalidated
 | `~/ea-runs/2026-08-29-exp019-failure-deadline/` | v5 | 決定的 61 run。案4 の退化と故障の期限（EXP-019）。`exp019.sh` で再生成可 |
 | `~/ea-runs/2026-08-29-exp028-water-tightening/` | v5（**全 run が運用点を変えた probe**） | 決定的 789 run の **digest のみ**（生 run 282 MB は保存せず）。案3 の退化（EXP-028）。`exp028.sh` で再生成可 |
 | `~/ea-runs/2026-08-29-exp029-audit/` | v5（同上・probe） | 決定的 411 run の **digest のみ**。監査の指摘を著者が再現（EXP-029）。`exp029.sh` で再生成可 |
+| `~/ea-runs/2026-08-29-plan3-probe/` | v5（同上・probe） | 決定的 1,651 run の **digest のみ**＋事前登録。案3 の測り直しと監査の再現（EXP-030） |
 
 各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
 

@@ -337,7 +337,29 @@ AI の設計能力を測る実験を組みましたが、その主指標が
 
 ## 判断1 ★ 実験環境を作り直すか（**二択のままです。一度「片方が消えた」と書きましたが、撤回しました**）
 
-> ### ⚠ この節は一度誤った内容で公開しました（2026-08-29）
+> ### ⚠⚠ この節は**二度**誤った内容で公開しました（2026-08-29）
+>
+> **2回目の訂正（最新）:** 「案3 は成立します」も**誤りでした。**
+> 正しい締め方で測り直し、**今度は公開の前に**独立監査を通したところ、3体とも否定しました。
+>
+> ```
+> ① 状況を見ない「一つの設定」で全員助かる  つまみを3本にすると 20通りの状況すべてで 4/4。
+>                                      私の「上限」は 71/80 でした。「判断の余地」は
+>                                      つまみを1本に絞ったことで生まれた見かけです
+> ② そもそも全員死ぬ運用点だった          同じ設定で観測時間を2倍（100 step）にすると
+>                                      **全状況・全設定で全滅**します。50 step は
+>                                      結末の前で映画を止めていただけでした
+> ```
+>
+> **判断1 は二択のまま、どちらも未確定です。** 案3 は「成立しない」ではなく
+> **「観測時間に依存しない指標で測り直すまで保留」**が正確です。
+>
+> そして**この評価層で「生存者数」を使った過去の測定すべてに、同じ問いが立ちます** —
+> その数字は「生き延びたか」ではなく「観測を打ち切った時点で何人残っていたか」かもしれません。
+>
+> ---
+>
+> ### ⚠ 1回目の訂正（記録として残します）
 >
 > 「案3 は測定の結果、成立しないと判明」と書きましたが、**独立監査3体がそれを覆し、
 > 指摘は全件こちらで再現できました。案3 は成立します。**
@@ -458,7 +480,8 @@ upstream #59            取り込んでも成績が変わらないと確認済�
 | EXP-026 | 主指標が定数1行で満点になった（監査3体） | [EXP-026](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-026-the-metric-a-constant-string-wins.md) |
 | **EXP-027** | **設計の層にも判断が無い（同じ壁の4回目）** | [EXP-027](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-027-the-designer-layer-degenerates-too.md) |
 | EXP-028 | 案3 が成立しないと判明 — **撤回済み**（EXP-029） | [EXP-028](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-028-the-loop-is-closed.md) |
-| **EXP-029** | **独立監査が EXP-028 を覆した。案3 は成立する（締める相手は酸素×水）** | [EXP-029](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-029-the-audit-broke-exp-028.md) |
+| EXP-029 | 独立監査が EXP-028 を覆した（「案3 は成立する」の部分は**撤回**） | [EXP-029](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-029-the-audit-broke-exp-028.md) |
+| **EXP-030** | **案3 は保留。生存者数が「打ち切られたカウント」だと判明** | [EXP-030](https://github.com/ops324/engineering_agents/blob/experiment/eclss-evaluation-layer/docs/ja/memo/experiments/EXP-030-the-window-was-cutting-the-ending.md) |
 
 ## 主要な修正コミット
 
