@@ -10,7 +10,11 @@
 ## ブランチ
 
 ```
-experiment/eclss-evaluation-layer   （土台から103コミット。**origin と同期済み・未 push 0本** — 2026-08-29 実測）
+experiment/eclss-evaluation-layer
+  **コミット数と未 push は書かない — コミットのたびに腐り、実際に一度腐った。**
+  ここに数字を書く代わりに確かめること（どちらも1秒）:
+    git rev-list --count d5616389..HEAD
+    git log --oneline origin/experiment/eclss-evaluation-layer..HEAD
   土台: d5616389（#58）。**upstream/trunk は c7f3d89（#59）に進んでいて未取り込み**
         → #59 はルール腕を「1 step に ceil(不足/効果) 回」に変えたが、この枝の定格の
           不変条件が同一 step の合算を1回分で止めるので**効果ゼロ**（EXP-016 の確認と同じ根拠）。
@@ -559,7 +563,7 @@ run データ      ~/ea-runs/ の7ディレクトリ（54 MB、telemetry 全文�
                   公表値は `run 自身の閾値`＝`score_run(dir, habitat=None)`。**`ea scorecard` では出せない**
                   決定的な腕は n=1 なので Welch ではなく1標本 t 検定
                 各実験のバッチスクリプト（sweep / noise / temperature / llm-vs-rule）
-経緯            この repo の 103コミット + EXP-000〜027
+経緯            この repo のコミット（`git rev-list --count d5616389..HEAD`）+ EXP-000〜028
 会話ログ        ~/.claude/projects/-Users-takimototetsuya-Coup-de-Burst-/*.jsonl
 次回プロンプト   ~/ea-runs/next-session-prompt.md
 ```
