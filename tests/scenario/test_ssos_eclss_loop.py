@@ -69,12 +69,16 @@ def test_ssos_eclss_loop_baseline_runs(tmp_path: Path):
     # steps the LLM arm wins in all three generations, at 50 it does not -- and
     # nothing anywhere justified 50. Reading the value back from the scenario
     # would make this test agree with whatever the window happens to be, which
-    # is exactly how it went unexamined. 72 x 1200 s = 24 h is this branch's
-    # choice; changing it is a generation change and this line is where it is
-    # noticed.
-    assert summary["steps"] == 72
-    assert len(telemetry) == 72
-    assert len(health) == 72
+    # is exactly how it went unexamined.
+    #
+    # 50 still has no justification; scenario.yaml says so in full. 72 (one day)
+    # was tried and reverted (EXP-032) once it was measured that the arms sit at
+    # 4 occupants against 3 for every window from 14 to 150 -- 72 bought no
+    # resolution, and cost three generations of comparability. This line is
+    # where both halves of that round trip were noticed.
+    assert summary["steps"] == 50
+    assert len(telemetry) == 50
+    assert len(health) == 50
     assert summary["inject_failures"] is False
     assert summary["operational_command_count"] == 0
     assert summary["message_count"] == 0
