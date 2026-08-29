@@ -63,9 +63,18 @@ def test_ssos_eclss_loop_baseline_runs(tmp_path: Path):
     assert summary["scenario"] == "ssos_eclss_loop"
     assert summary["backend"] == "mock"
     assert summary["agents_mode"] == "none"
-    assert summary["steps"] == 50
-    assert len(telemetry) == 50
-    assert len(health) == 50
+    # Pinned, not derived from the config: the window decides conclusions. An
+    # audit (2026-08-29, EXP-031) found the published "the LLM arm is
+    # indistinguishable from no-op" was a function of the window alone -- at 15
+    # steps the LLM arm wins in all three generations, at 50 it does not -- and
+    # nothing anywhere justified 50. Reading the value back from the scenario
+    # would make this test agree with whatever the window happens to be, which
+    # is exactly how it went unexamined. 72 x 1200 s = 24 h is this branch's
+    # choice; changing it is a generation change and this line is where it is
+    # noticed.
+    assert summary["steps"] == 72
+    assert len(telemetry) == 72
+    assert len(health) == 72
     assert summary["inject_failures"] is False
     assert summary["operational_command_count"] == 0
     assert summary["message_count"] == 0

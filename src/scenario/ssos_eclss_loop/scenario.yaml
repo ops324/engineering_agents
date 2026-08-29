@@ -5,16 +5,49 @@ description: >
   Mass storage values are kilograms (ROS bridge converts SSOS grams ↔ kg).
 
 simulation:
-  steps: 50  # [-] default observation steps (CLI --steps overrides)
+  # 72 steps x 1200 s = exactly 24 hours. **This is this branch's choice, not the
+  # team's**: upstream and the base both say 50, and this branch ran at 50 through
+  # v3, v4 and v5. Recorded here because the window turned out to decide a
+  # published conclusion (EXP-031) and 50 could not be defended.
+  #
+  # Where 50 came from: it was set upstream on 2026-08-19 in #53 ("Scale
+  # ssos_eclss_loop operator team and fit vLLM prompts"), commented "decision
+  # cycles (observe -> deliberate -> act)" -- a count of agent turns, in a change
+  # about prompt sizing. `step_seconds` did not exist yet; 1200 s arrived three
+  # days later in #54. So "16.7 hours" is the product of two numbers chosen
+  # separately, for unrelated reasons, and neither commit gives a reason for its
+  # own. Nobody chose the duration.
+  #
+  # Why the window is not a free parameter (EXP-031, measured on the existing
+  # runs at no cost -- events.jsonl carries the step each occupant was lost):
+  #   W 16-20  the LLM arm beats no-op significantly
+  #   W 28-34  every arm gives the same number -- the crossing
+  #   W 36-50  the LLM arm is behind, not significantly
+  # and at W=50 the LLM-vs-no-op p is 0.050 (v3), 0.049 (v4), 0.170 (v5): the
+  # published window sits on the significance boundary in two generations out of
+  # three, which is the least stable place it could be.
+  #
+  # 72 is 38 steps clear of the crossing, and it is the only candidate inside
+  # reach that can be said in a sentence -- "one day of life support". Half a day
+  # (36) is two steps from the crossing plateau; a week (504) is the cleanest
+  # separation of all (no-op reaches 0 of 4) and costs 34 GPU-hours per arm.
+  #
+  # What it costs: this is a generation change. Every 50-step measurement --
+  # EXP-013/014/015 included -- is no longer comparable, and the LLM arms have to
+  # be re-run to be scored here (~4.9 GPU-hours per generation; they do not
+  # reproduce from a seed). The deterministic arms are free and already measured:
+  # rule 82.4400, no-op 68.0556 on the run's own thresholds, against 82.2297 and
+  # 68.6661 at 50. The gap widens from 13.56 to 14.38.
+  steps: 72  # [-] observation steps = 24 h at step_seconds 1200 (branch choice)
   initial_co2_storage_kg: 1.3  # [kg] starting CO2 tank/cabin; plant_sim uses cabin
   # Cabin O2, not a tank. Set just inside the [V2 6003] normoxia band so the
   # run starts compliant and drifts out of it: crew 4 burn 0.0467 kg/step, so
   # 145 mmHg (104.25 kg) is crossed at step 13 if OGS never runs, and OGS run
-  # regularly recovers by step 50.
+  # regularly recovers before the window closes.
   # Starting at the band edge is deliberate. The band is 7.2 kg wide and the
-  # window only burns 2.34 kg, so there is no other way to observe a breach
-  # inside 50 steps. The CO2 axis is built the same way -- 1.3 kg against a
-  # 2.0 kg threshold, 65% of the way to its own edge.
+  # window only burns 3.36 kg at 72 steps (2.34 at the old 50), so there is no
+  # other way to observe a breach inside the window. The CO2 axis is built the
+  # same way -- 1.3 kg against a 2.0 kg threshold, 65% of the way to its own edge.
   initial_o2_storage_kg: 104.86  # [kg] cabin O2 = PIO2 145.8 mmHg, just inside normoxia
   initial_product_water_l: 80.0  # [L] starting potable water (above product_water_low_l)
 
@@ -130,9 +163,10 @@ plant_sim:
       # starts at the mild hypoxia floor, and the absolute floor 122 mmHg
       # (87.71 kg) is the critical edge.
       #
-      # Neither can be reached in a 50-step run: from the normoxia floor it
-      # takes 93 hours of crew metabolism to fall to 127 mmHg, and the window
-      # is 16.7. That is intended. O2 should become lethal through a leak
+      # Neither can be reached inside the window: from the normoxia floor it
+      # takes 93 hours of crew metabolism to fall to 127 mmHg, and the window is
+      # 24 (16.7 before the window became 72). That is intended -- 290 steps
+      # would be needed. O2 should become lethal through a leak
       # (roadmap R4), not through breathing -- 105 kg is 32 days of crew
       # consumption, and a cabin emptied by respiration is not a real scenario.
       o2_storage_low_kg: 91.31  # [kg] WARNING edge = [V2 6003] mild hypoxia floor
