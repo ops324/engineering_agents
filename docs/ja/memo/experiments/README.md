@@ -69,6 +69,14 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-033](EXP-033-the-trap-and-what-it-did-not-explain.md) | `request_o2` は罠。だが除くと LLM は no-op に**勝つ** | **confirmed**（★初稿の見出しが監査で**反転**。EXP-015 の README と整合） |
 | [EXP-034](EXP-034-early-was-not-the-advantage.md) | 「早さ」は利点ではなかった。効くのは密度で、定数で買える | **confirmed**（★初稿の「早さに効果」は監査で否定。**既存記録の再発見が今日3回目**） |
 
+## セッション記録と設計方針
+
+| | 内容 |
+|---|---|
+| [SESSION-2026-08-29.md](SESSION-2026-08-29.md) | **1日分の全体像** — 検証7件・結果・組み込み3件・訂正6件・繰り返した失敗5種 |
+| [flow-engineering-design.md](../flow-engineering-design.md) | **次の方向**（草案・未監査）— 流れは決定的に、判断に LLM。グラフDB と再帰的改善 |
+| [REPORT-2026-08-29-team.md](REPORT-2026-08-29-team.md) | チーム向け報告。**判断5件**（うち判断4 は `request_o2` の実バグ） |
+
 ## データの所在
 
 生データは GitHub に入れない（フロー §10）。要約の所在（合計 54 MB）:
