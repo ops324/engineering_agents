@@ -358,6 +358,73 @@ def _operating_point_modified(
     return changed
 
 
+#: Keys under ``agents`` that say which arm ran rather than how it was tuned.
+#: The mode is the axis of comparison itself and is already recorded verbatim
+#: in ``summary["actor_mode"]`` / ``["design_mode"]``; diffing it would put
+#: every run that names an arm into ``arm_modified`` and make the field
+#: unreadable on the day it landed.
+#:
+#: ``agents.mode`` is the legacy spelling of the same selection, and it is not
+#: dead: the CLI test suite's own overrides use it, and so do the batch scripts
+#: in ``~/ea-runs/analysis-tools``. Leaving it out flagged every one of them.
+#: The legacy *policy* alias is deliberately not here -- ``agents.policy.*`` is
+#: how ``apply_design_proposals`` writes a proposal into the arm, which is a
+#: tuning and belongs on the record.
+_ARM_IGNORED = {"agents.mode", "agents.actor.mode", "agents.design.mode"}
+
+
+def _arm_modified(pristine: Dict[str, Any], effective: Dict[str, Any]) -> List[str]:
+    """Which parts of the arm this run re-tuned, if any.
+
+    Neither of the other two guards looks at ``agents`` at all. An audit
+    (2026-08-29, EXP-029) took the published rule arm from 91.55 to 94.67 of
+    100 with ``--set agents.actor.policy.co2_action_margin_kg=1.2`` and both
+    existing fields reading ``[]``; the same blind spot scored a run that had
+    stopped recovering water *higher* than one that recovered it
+    (``wrs_feed_trigger_l=9999``: C 4.32 to 4.98, minimum water 78.16 to 72.78
+    L), because C's ``request_sizing`` charges for oversized WRS requests and
+    the cheapest way to stop being charged is to stop asking.
+
+    This is neither of the other two things. It is not the bar --
+    ``co2_action_margin_kg`` exists precisely so that acting earlier never
+    touches ``co2_storage_high_kg``, which is deliberate and stays that way --
+    and it is not the operating point, because the plant is identical. Tuning
+    the arm is a legitimate thing to do, so this records rather than refuses.
+    What was missing is that nothing said it had happened.
+
+    Weaker than the nine holes before it: the effective policy is written to
+    ``agents_config.yaml`` in the run directory, so an arm can be recovered
+    after the fact by reading it. Only the two fields a reader actually checks
+    were blind.
+
+    Bounded on purpose to the scenario config's ``agents`` section, which is
+    what ``--set`` and ``--override-file`` reach. The other way into the policy
+    is editing ``agents.yaml``, and that file is tracked, so it surfaces as
+    ``code_version.dirty`` rather than here.
+    """
+    changed: List[str] = []
+    absent = object()  # not ``or {}``: that reads 0 and False as the same absence
+
+    def walk(pris: Any, eff: Any, path: str) -> None:
+        # Descend when *either* side is a dict, substituting an empty one for a
+        # missing branch. scenario.yaml names no ``agents.actor.policy`` at all
+        # -- the defaults live in agents.yaml -- so stopping at the first
+        # absent side would report the whole subtree as "agents.actor.policy"
+        # and never name the key that moved, which is the one thing a reader
+        # needs in order to judge the run.
+        if isinstance(pris, dict) or isinstance(eff, dict):
+            pris_d = pris if isinstance(pris, dict) else {}
+            eff_d = eff if isinstance(eff, dict) else {}
+            for key in sorted(set(pris_d) | set(eff_d)):
+                walk(pris_d.get(key, absent), eff_d.get(key, absent), f"{path}.{key}")
+            return
+        if pris != eff and path not in _ARM_IGNORED:
+            changed.append(path)
+
+    walk(pristine.get("agents") or {}, effective.get("agents") or {}, "agents")
+    return changed
+
+
 def _apply_survival_after_ops(
     *,
     backend: EclssBackend,
@@ -551,6 +618,7 @@ class SsosEclssLoopScenario(Scenario):
         pristine_config = self.load_config(None)
         scoring_bar_modified = _scoring_bar_modified(pristine_config, config)
         operating_point_modified = _operating_point_modified(pristine_config, config)
+        arm_modified = _arm_modified(pristine_config, config)
         dwell_streaks = SurvivalStreaks()
 
         try:
@@ -674,6 +742,7 @@ class SsosEclssLoopScenario(Scenario):
             # Not the bar -- how hard the run was. A clean bar says the score was
             # not gamed; it does not say the scenario was the published one.
             "operating_point_modified": operating_point_modified,
+            "arm_modified": arm_modified,
             # What attrition actually read. Equal to thresholds unless the
             # config names bands, and worth carrying either way: a run that
             # reports occupant losses should say which edges took them.

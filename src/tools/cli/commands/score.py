@@ -88,6 +88,23 @@ def _operating_point_moved_by(run_dir: Path) -> Optional[List[str]]:
     return None if changed is None else [str(c) for c in changed]
 
 
+def _arm_moved_by(run_dir: Path) -> Optional[List[str]]:
+    """Which parts of the arm the run re-tuned. [] = none, None = predates the record.
+
+    Separate from the other two because it is a different question. The bar
+    asks whether the run drew its own line; the operating point asks whether
+    the scenario was easier; this asks whether the arm on the card is the arm
+    the name implies. An audit (2026-08-29, EXP-029) moved the published rule
+    arm 3.13 points with one policy key while both other fields read ``[]``.
+    """
+    try:
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    changed = summary.get("arm_modified")
+    return None if changed is None else [str(c) for c in changed]
+
+
 def _habitat_for(habitat_volume_m3: Optional[float]) -> Habitat:
     """The habitat to score in: the caller's volume, or the scenario's.
 
@@ -561,6 +578,7 @@ def scorecard(
     # moved its bar or simply run an easier scenario.
     card["scoring_bar_modified"] = moved
     card["operating_point_modified"] = _operating_point_moved_by(run_dir)
+    card["arm_modified"] = _arm_moved_by(run_dir)
     if write:
         (run_dir / "scorecard.json").write_text(
             json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -594,6 +612,14 @@ def scorecard(
     if operating_point:
         typer.echo(f"  ⚠ 運用点を変更: {', '.join(operating_point)}")
         typer.echo("    — 既定の運用点で走った run と直接比較できない")
+    # The third question, and the one that had no field at all until EXP-029:
+    # is the arm on this card the arm its name implies? Printed rather than
+    # refused -- tuning an arm is legitimate -- but printed, because the audit
+    # gained 3.13 points on one policy key with the two fields above clean.
+    arm_moved = card.get("arm_modified")
+    if arm_moved:
+        typer.echo(f"  ⚠ 腕の政策を変更: {', '.join(arm_moved)}")
+        typer.echo("    — 既定の政策で走った同名の腕と直接比較できない")
     if not card["scorable"]:
         typer.echo(
             f"  検証無効: {', '.join(gate['failed_checks'])}"

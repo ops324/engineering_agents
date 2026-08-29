@@ -546,3 +546,89 @@ def test_score_takes_o2_in_the_same_cabin_it_takes_co2(tmp_path, run_dir):
     frozen = runner.invoke(app, ["score", str(run_dir), "--baseline", str(run_dir)])
     assert frozen.exit_code == 0
     assert "not scored against a standard: o2" in frozen.output
+
+
+def test_a_retuned_arm_is_recorded_even_though_both_other_guards_are_clean(tmp_path):
+    """The bar and the operating point were watched; the arm was not.
+
+    An audit (2026-08-29, EXP-029) took the published rule arm from 91.55 to
+    94.67 of 100 with ``agents.actor.policy.co2_action_margin_kg=1.2`` and both
+    existing fields reading ``[]``. The plant is identical and the bar is
+    untouched -- ``co2_action_margin_kg`` exists precisely so that acting
+    earlier never moves ``co2_storage_high_kg`` -- so neither of the other two
+    guards had anything to say, correctly. Nothing else did either.
+
+    Recorded rather than refused: re-tuning an arm is a legitimate thing to do.
+    What was wrong was that a card could be read, or pasted into a comparison,
+    with no way to ask whether the arm was the one its name implies.
+    """
+    retuned = _run_with(
+        tmp_path,
+        "retuned_arm",
+        {"agents": {"mode": "labeled_rule_base",
+                    "actor": {"policy": {"co2_action_margin_kg": 1.2}}}},
+    )
+    summary = json.loads((retuned / "summary.json").read_text(encoding="utf-8"))
+    assert summary["arm_modified"] == ["agents.actor.policy.co2_action_margin_kg"]
+    # The other two are clean, and that is the point: this is a third question.
+    assert summary["scoring_bar_modified"] == []
+    assert summary["operating_point_modified"] == ["simulation.steps", "inject_failures"]
+
+    scored = runner.invoke(app, ["scorecard", str(retuned), "--yardstick", "run"])
+    assert scored.exit_code == 0
+    assert "腕の政策を変更" in scored.stdout
+    assert "co2_action_margin_kg" in scored.stdout
+
+
+def test_not_recovering_water_scored_higher_than_recovering_it_and_said_nothing(tmp_path):
+    """The case that makes the field worth having.
+
+    ``wrs_feed_trigger_l=9999`` stops the arm ever calling WRS. The cabin is
+    measurably worse for it -- an audit measured minimum water falling 78.16 to
+    72.78 L -- and the run scored *higher*, because C's ``request_sizing``
+    charges for oversized WRS requests and the cheapest way to stop being
+    charged is to stop asking (EXP-016's C axis, one more time). Both existing
+    guards read clean throughout.
+    """
+    stopped = _run_with(
+        tmp_path,
+        "no_water_recovery",
+        {"agents": {"mode": "labeled_rule_base",
+                    "actor": {"policy": {"wrs_feed_trigger_l": 9999.0}}}},
+    )
+    summary = json.loads((stopped / "summary.json").read_text(encoding="utf-8"))
+    assert summary["arm_modified"] == ["agents.actor.policy.wrs_feed_trigger_l"]
+    assert summary["scoring_bar_modified"] == []
+
+
+def test_naming_an_arm_is_not_re_tuning_it(tmp_path):
+    """Selecting the arm must not trip the field, or it trips on every run.
+
+    Three spellings reach the same selection: ``agents.mode`` (legacy, still
+    used by these overrides and by the batch scripts), ``agents.actor.mode``
+    and ``agents.design.mode``. The mode is the axis of comparison and is
+    already recorded verbatim in ``summary["actor_mode"]``. A guard that fires
+    on every run teaches everyone to ignore it, which is how the enumerated
+    survival check got walked around twice.
+    """
+    plain = _run_with(tmp_path, "arm_named_only", {})
+    summary = json.loads((plain / "summary.json").read_text(encoding="utf-8"))
+    assert summary["actor_mode"] == "labeled_rule_base"  # an arm was in fact named
+    assert summary["arm_modified"] == []
+
+
+def test_a_proposal_written_through_the_legacy_policy_alias_is_still_a_re_tuning(tmp_path):
+    """``agents.policy.*`` is how ``apply_design_proposals`` writes into the arm.
+
+    It is deliberately not in the ignore set: a design proposal that re-tunes
+    the arm is exactly the thing this field exists to record, and the legacy
+    spelling must not be the way around it.
+    """
+    proposed = _run_with(
+        tmp_path,
+        "legacy_policy_alias",
+        {"agents": {"mode": "labeled_rule_base",
+                    "policy": {"wrs_feed_trigger_l": 2.0}}},
+    )
+    summary = json.loads((proposed / "summary.json").read_text(encoding="utf-8"))
+    assert summary["arm_modified"] == ["agents.policy.wrs_feed_trigger_l"]
