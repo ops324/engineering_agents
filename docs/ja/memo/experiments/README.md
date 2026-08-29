@@ -55,6 +55,13 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-019](EXP-019-failure-has-no-ambiguity.md) | 故障には期限があるが曖昧さが無い（案4） | **confirmed（負の結果）**（案4 も退化。同じ壁に3回目） |
 | [EXP-020](EXP-020-o2-resolution-is-discarded.md) | O₂ の分解能を採点式が捨てている（再採点のみ） | **partially retracted**（EXP-021。観察は正しく、直し方が誤り） |
 | [EXP-021](EXP-021-the-guard-broke-a-third-time.md) | 独立監査：EXP-020 の撤回と、ガードの破れ3件 | **confirmed**（★ガードが3度目に破られた。乗員2→4・+24.33点） |
+| [EXP-022](EXP-022-the-guard-had-four-more-windows.md) | 独立監査2巡目：帯の前提の訂正と、ガードの破れ4件 | **confirmed**（★`--steps` が最も安い穴。何もしない腕が 2 step で 86.1/90） |
+| [EXP-023](EXP-023-the-rule-i-wrote-fired.md) | 独立監査3巡目：O₂ の帯の変更を自分の撤回条件で止めた | **rejected（提案を撤回）**（帯は 91.31 のまま。飽和は免疫でもあった） |
+| [EXP-024](EXP-024-the-loop-nobody-ran.md) | 誰も回していなかった提案評価ループを回した | **partially retracted**（EXP-028。現象は実在するが原因の帰属が誤り） |
+| [EXP-025](EXP-025-llm-designer.md) | LLM designer の実験設計（第1版・第2版） | **retracted**（2版とも。第2版は独立監査3体が全員反対） |
+| [EXP-026](EXP-026-the-metric-a-constant-string-wins.md) | 主指標が判断を測っていなかった（定数1行が満点） | **confirmed**（★測る前に「判断ゼロの入力」を通す規律の出所） |
+| [EXP-027](EXP-027-the-designer-layer-degenerates-too.md) | 設計の層にも内点が無い。定数がルールを27本ぶん上回る | **confirmed（負の結果）**（同じ壁に4回目） |
+| [EXP-028](EXP-028-the-loop-is-closed.md) | 案3 は成立しない。ARS に水のコストが無く、ループが閉じている | **confirmed（負の結果）**（★同じ壁に5回目。ただし「なぜ」が数字で言えた） |
 
 ## データの所在
 
@@ -73,6 +80,7 @@ status:        confirmed | rejected | superseded | invalidated
 | `~/ea-runs/2026-08-28-v5-llm-vs-rule/` | **v5**（O₂ がキャビン大気・水が [V2 6109]） | LLM 24 run + 参照2（EXP-015 / EXP-016） |
 | `~/ea-runs/2026-08-29-exp018-plan1/` | v5 | 決定的 5 run。案1 の退化（EXP-018）。`exp018.sh` で再生成可 |
 | `~/ea-runs/2026-08-29-exp019-failure-deadline/` | v5 | 決定的 61 run。案4 の退化と故障の期限（EXP-019）。`exp019.sh` で再生成可 |
+| `~/ea-runs/2026-08-29-exp028-water-tightening/` | v5（**全 run が運用点を変えた probe**） | 決定的 789 run の **digest のみ**（生 run 282 MB は保存せず）。案3 の退化（EXP-028）。`exp028.sh` で再生成可 |
 
 各ディレクトリの `README.md` に、どのファイルがどの主張を支えるかの対応表がある。
 
