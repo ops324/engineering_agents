@@ -57,7 +57,7 @@ status:        confirmed（★予測は半分外れ）
 候補を4つ挙げた（投入速度の上限 / 遅延 / 最小投入単位 / 別用途）。
 **そのうちどれが実際に判断を作るか。設計文書を書き直す前に測る。**
 
-**方法は監査官のものを再利用した**（`scratchpad/audit/s1_absorbent.py`）。
+**方法は監査官のものを再利用した**（`~/ea-runs/2026-08-30-decision-s1/**/s1_absorbent.py`）。
 定数は repo の実測値（CO₂ 産生 0.0144444 kg/step/人、ARS 定格 0.0625 kg/step、
 帯 2.0/8.0、減員は `alive//divisor` でラッチ）。
 
@@ -127,5 +127,7 @@ status:        confirmed（★予測は半分外れ）
 ・「別用途」（監査の4案目）は測っていない
 ```
 
-再現: `scratchpad/audit/s1_commitment.py` / `s1_magnitude.py` / `s1_crew.py`
-（監査官の `s1_absorbent.py` を土台にしている）
+再現: **`~/ea-runs/2026-08-30-decision-s1/`**（scratchpad は消えるので退避済み・README あり）
+  `author/s1_commitment.py` `s1_magnitude.py` `s1_crew.py` `s1_delay_sweep.py`
+  `auditor1/s1_absorbent.py`（第1版を殺した縮約模型）
+  `auditor2/x_reach.py` `x_realwindow.py` ほか（**第2版を殺した検算**）

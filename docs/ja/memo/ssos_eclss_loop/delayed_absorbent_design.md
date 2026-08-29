@@ -94,7 +94,7 @@ status: **落ちた。** 独立監査（BREAK）が**独立した致命傷を2�
 
 ## S1 は通した — **設計文書を書く前に測ってある**
 
-`scratchpad/audit/s1_commitment.py`（監査官の縮約模型を再利用・GPU 0秒）:
+`~/ea-runs/2026-08-30-decision-s1/author/s1_commitment.py`（監査官の縮約模型を再利用・GPU 0秒）:
 
 | 構造 | 勝率 | 差の中央値 | 乗員が動くセル |
 |---|---|---|---|
