@@ -69,6 +69,8 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-033](EXP-033-the-trap-and-what-it-did-not-explain.md) | `request_o2` は罠。だが除くと LLM は no-op に**勝つ** | **confirmed**（★初稿の見出しが監査で**反転**。EXP-015 の README と整合） |
 | [EXP-034](EXP-034-early-was-not-the-advantage.md) | 「早さ」は利点ではなかった。効くのは密度で、定数で買える | **confirmed**（★初稿の「早さに効果」は監査で否定。**既存記録の再発見が今日3回目**） |
 | [EXP-035](EXP-035-does-the-s2-gate-catch-a-rediscovery.md) | S2 ゲートは再発見を止めたか。**機械が新たに止めたのは1回**、見逃した1回は監査でしか止まらなかった件 | **corrected**（★主要な結論2つを監査で撤回。**事前登録の撤回条件が2つとも到達不能だった**） |
+| [EXP-036](EXP-036-what-the-audit-missed.md) | 監査は何を見逃したか。**「7回中7回」はスコープ内の分子**。失敗様式は3つとも監査を使う側の手順にあった | **corrected**（★3つの数字が全部、著者が宣言した偏りの向きに誤っていた） |
+| [EXP-037](EXP-037-the-window-question-has-a-cheap-answer.md) | 窓の問題には安い答えがあった — **結論は窓を倍にして生き残ったときだけ採用する** | **confirmed**（★著者の予測は外れ。ルール腕は 8倍の窓で 0.34点しか動かない） |
 
 ## セッション記録と設計方針
 
