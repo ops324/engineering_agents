@@ -9,7 +9,10 @@
 > 厳密に支配的になり B も判断にならない。**この文書のまま実装してはいけない。**
 > 下の「測ってわかったこと」（期限が3 step であること、余裕で期限が動くこと）は生きている。
 >
-> **★ 後継（2026-08-29）: [contingency_absorbent_design.md](contingency_absorbent_design.md)。**
+> **★ 後継は2つとも落ちた（2026-08-30）:**
+> [contingency_absorbent_design.md](contingency_absorbent_design.md)（第1版・S1 で落ちた）／
+> [delayed_absorbent_design.md](delayed_absorbent_design.md)（第2版・比較の非対称と窓で落ちた）。
+> **★ 当時の後継（第1版）:**
 > 判断を「**診断**」ではなく「**配分**」に置くことで、この落ち方を回避しようとしている
 > （不確かにするのは「何が壊れたか」ではなく「この先どれだけ続くか」）。**まだ未監査・未実装。**
 > T の窓の算術も誤りだった — 検知が step 10 に固定されるので **T ≤ 2 のみが間に合い、T=3 は常に手遅れ。**
