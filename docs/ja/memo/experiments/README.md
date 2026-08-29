@@ -72,6 +72,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-036](EXP-036-what-the-audit-missed.md) | 監査は何を見逃したか。**「7回中7回」はスコープ内の分子**。失敗様式は3つとも監査を使う側の手順にあった | **corrected**（★3つの数字が全部、著者が宣言した偏りの向きに誤っていた） |
 | [EXP-037](EXP-037-the-window-question-has-a-cheap-answer.md) | 窓の問題には安い答えがあった — **結論は窓を倍にして生き残ったときだけ採用する** | **confirmed**（★著者の予測は外れ。ルール腕は 8倍の窓で 0.34点しか動かない） |
 | [EXP-038](EXP-038-the-situation-decides-not-the-response.md) | 窓を延ばしても判断は生まれない。**飽和域では応答に 0.71点しか残らない** | **corrected**（★同じ壁の6回目。初稿の「234倍」は定義の不一致で監査が訂正） |
+| [EXP-039](EXP-039-delay-is-the-structure-that-makes-a-decision.md) | **判断を作るのは「遅延」だけ**。速度上限は勝率だけで差は雑音、最小単位はゼロ | **confirmed**（★実装せずに S1 を通した。9/48 で乗員が動く＝12.5点） |
 
 ## セッション記録と設計方針
 
