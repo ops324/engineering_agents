@@ -68,6 +68,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-032](EXP-032-we-moved-the-window-and-moved-it-back.md) | 観測窓を 72 にして戻した。分解能は増えなかった | **reverted**（★設定は 50 のまま。**request_o2 が窓より重い交絡**と判明） |
 | [EXP-033](EXP-033-the-trap-and-what-it-did-not-explain.md) | `request_o2` は罠。だが除くと LLM は no-op に**勝つ** | **confirmed**（★初稿の見出しが監査で**反転**。EXP-015 の README と整合） |
 | [EXP-034](EXP-034-early-was-not-the-advantage.md) | 「早さ」は利点ではなかった。効くのは密度で、定数で買える | **confirmed**（★初稿の「早さに効果」は監査で否定。**既存記録の再発見が今日3回目**） |
+| [EXP-035](EXP-035-does-the-s2-gate-catch-a-rediscovery.md) | S2 ゲートは再発見を止めたか。**機械が新たに止めたのは1回**、見逃した1回は監査でしか止まらなかった件 | **corrected**（★主要な結論2つを監査で撤回。**事前登録の撤回条件が2つとも到達不能だった**） |
 
 ## セッション記録と設計方針
 
