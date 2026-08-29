@@ -5,7 +5,7 @@
 土台:          d5616389（#58）。upstream/trunk は c7f3d89（#59）で未取り込み
 規模:          土台から 101 コミット / 76ファイル / +13,905行 −150行
 HEAD:          98c56d0（origin に push 済み）
-テスト:        636 passed / 5 skipped / 0 failed
+テスト:        640 passed / 5 skipped / 0 failed
 run データ:    700本（summary.json を持つもの・全データ付きで保存）
 実験記録:      EXP-000〜027（28本）＋ 第1期の所見35本
 報告期間:      2026-06-21（計画開始）〜 2026-08-29
