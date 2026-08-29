@@ -73,6 +73,7 @@ status:        confirmed | rejected | superseded | invalidated
 | [EXP-037](EXP-037-the-window-question-has-a-cheap-answer.md) | 窓の問題には安い答えがあった — **結論は窓を倍にして生き残ったときだけ採用する** | **confirmed**（★著者の予測は外れ。ルール腕は 8倍の窓で 0.34点しか動かない） |
 | [EXP-038](EXP-038-the-situation-decides-not-the-response.md) | 窓を延ばしても判断は生まれない。**飽和域では応答に 0.71点しか残らない** | **corrected**（★同じ壁の6回目。初稿の「234倍」は定義の不一致で監査が訂正） |
 | [EXP-039](EXP-039-delay-is-the-structure-that-makes-a-decision.md) | ~~遅延が判断を作る~~ **撤回**。比較が非対称で、因果的な定数族に差を当てると 36.5 → **0.0** | **retracted**（★運用点の窓 50 では 0/48。遅延の実装と乗員 9/48 は無傷） |
+| [EXP-040](EXP-040-does-structural-matching-catch-the-one-that-mattered.md) | 腕4（識別子の照合）は **0/3**。共有はあるが弁別しない（Q1 は 1426件中30位）。★副産物: **公開済み EXP-035 の表に生きた誤りが2件**（tau=0.248 の捕捉は 1/3 でなく 0/3） | **confirmed**（未監査。腕4 は棄却。母集団づくりは S1 で落ちた） |
 
 ## セッション記録と設計方針
 
