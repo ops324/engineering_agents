@@ -86,3 +86,47 @@ def test_build_provenance_includes_operational_rejected(tmp_path: Path):
     assert operational[0]["trace"]["event_kind"] == "/eclss/events/operational_rejected"
     assert operational[0]["trace"]["result_success"] is False
     assert operational[0]["trace"]["event_message"] == "ARS failed"
+
+
+def test_o2_does_not_match_a_message_that_only_says_co2():
+    """``"o2" in text`` is true of every message that says co2, and almost every
+    message says co2.
+
+    An audit (2026-08-29, EXP-033) found 5 of 36 ``request_o2`` commands in the
+    v3/v4/v5 runs attributed to an operator message that never mentions O2 at
+    all -- the provenance said an operator announced a command they were not
+    talking about. ``"ars"`` has the same shape and matched ``clears`` three
+    times. This is the same substring trap that, inside the analysis itself,
+    counted CO2 deaths as O2 deaths because ``"o2" in "co2_warning"``.
+
+    The keywords are alphanumeric, so ``\\b`` sits between ``c`` and ``o2`` and
+    would not help; the match requires a non-alphanumeric neighbour instead.
+    """
+    from integrations.one_piece.client import _mentions
+
+    assert not _mentions("co2 at 2.60kg confirms drift persists", "o2")
+    assert _mentions("o2 at 103.93kg clears 95kg cutoff", "o2")
+    assert not _mentions("consensus holds: o2 clears 95kg cutoff", "ars")
+    assert _mentions("starting ars air_revitalisation", "ars")
+    assert not _mentions("logs show nothing", "ogs")
+    assert _mentions("starting ogs oxygen_generation", "ogs")
+    assert _mentions("co2 drift continues", "co2")
+
+
+def test_a_request_o2_command_is_matched_to_a_message_about_o2(tmp_path: Path):
+    """End to end through the exporter, on the shape the audit found in the runs.
+
+    Both messages are the same step and actor, and both mention co2; only one
+    mentions O2. Before the fix the first one won, because it came first.
+    """
+    from integrations.one_piece.client import _find_operational_message
+
+    messages = [
+        {"step": 7, "from_role": "eclss_actor_1", "message_type": "operational_command",
+         "message": "CO2 at 2.64kg confirms drift persists; holding ARS."},
+        {"step": 7, "from_role": "eclss_actor_1", "message_type": "operational_command",
+         "message": "Requesting O2 to shore up reserves against the CO2 drift."},
+    ]
+    matched = _find_operational_message(7, "eclss_actor_1", "request_o2", messages)
+    assert matched is not None
+    assert "Requesting O2" in matched["message"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -88,6 +89,26 @@ def _find_design_message(
     return None
 
 
+#: The word an operator's message is expected to contain when it announces one
+#: kind of command. Matched on word boundaries, not as a substring: ``"o2" in
+#: text`` is true of every message that says ``co2``, and almost every message
+#: says co2 -- an audit (2026-08-29, EXP-033) found 5 of 36 ``request_o2``
+#: commands attributed to a message that never mentions O2 at all. ``"ars"``
+#: has the same shape and matched ``clears`` three times. The keywords are
+#: alphanumeric, so ``\b`` would fire between ``c`` and ``o2``; the lookarounds
+#: below require a non-alphanumeric neighbour on each side instead.
+_COMMAND_KEYWORD = {
+    "air_revitalisation": "ars",
+    "oxygen_generation": "ogs",
+    "request_co2": "co2",
+    "request_o2": "o2",
+}
+
+
+def _mentions(text: str, keyword: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", text) is not None
+
+
 def _find_operational_message(
     step: int,
     actor: str,
@@ -102,13 +123,8 @@ def _find_operational_message(
         if row.get("from_role") != actor:
             continue
         text = str(row.get("message", "")).lower()
-        if command_kind == "air_revitalisation" and "ars" in text:
-            return row
-        if command_kind == "oxygen_generation" and "ogs" in text:
-            return row
-        if command_kind == "request_co2" and "co2" in text:
-            return row
-        if command_kind == "request_o2" and "o2" in text:
+        keyword = _COMMAND_KEYWORD.get(command_kind)
+        if keyword is not None and _mentions(text, keyword):
             return row
     return None
 
