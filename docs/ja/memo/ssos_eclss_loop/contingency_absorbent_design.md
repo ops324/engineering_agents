@@ -35,7 +35,10 @@ status: **落ちた。** 独立監査が**実装せずに S1 を通し**、提�
 >
 > **⇒ この文書は「落ちた設計の記録」と「必要条件の考え方」として残す。実装はしない。**
 >
-> ## ★★ 再設計は S1 を通った — **効くのは「遅延」だけ**（[EXP-039](../experiments/EXP-039-delay-is-the-structure-that-makes-a-decision.md)・2026-08-30）
+> ## ~~★★ 再設計は S1 を通った — 効くのは「遅延」だけ~~（[EXP-039](../experiments/EXP-039-delay-is-the-structure-that-makes-a-decision.md)）
+>
+> **★2026-08-30 撤回。EXP-039 は retracted、第2版（delayed_absorbent_design.md）は「実装してはいけない」。**
+> **この節が出している次の設計への推薦は無効である。以下は当時の記述。**
 >
 > 監査が挙げた4候補を、**同じ縮約模型で実測した**（実装せず・GPU 0秒）。
 >
